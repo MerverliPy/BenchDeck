@@ -25,9 +25,7 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     for agent, results in snapshot.results.items():
         for result in results:
             if not result.get("final_output"):
-                warnings.append(
-                    f"{agent} case {result.get('case_id')} has an empty final output."
-                )
+                warnings.append(f"{agent} case {result.get('case_id')} has an empty final output.")
             judge_tx = result.get("judge_transcript")
             final_out = result.get("final_output")
             if judge_tx == final_out and final_out:
@@ -39,9 +37,7 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     scale = tally.get("score_scale")
     if not scale:
         warnings.append("Summary tally does not declare its score scale.")
-    if metadata.get("status") == "completed" and (
-        snapshot.policy_blocks or judged < planned
-    ):
+    if metadata.get("status") == "completed" and (snapshot.policy_blocks or judged < planned):
         warnings.append("Run is marked completed despite blocked or missing required coverage.")
 
     return {

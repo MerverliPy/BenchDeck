@@ -77,9 +77,7 @@ class OpenAIGateway:
     ) -> tuple[dict[str, Any], ResponseCapture]:
         capture = self.generate(instructions=instructions, input_text=input_text)
         if not capture.text:
-            raise RuntimeError(
-                f"Model returned no text: {capture.error or capture.raw_response}"
-            )
+            raise RuntimeError(f"Model returned no text: {capture.error or capture.raw_response}")
         return _parse_json_object(capture.text), capture
 
 

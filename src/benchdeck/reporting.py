@@ -25,15 +25,9 @@ def build_final_verdict(
         and required_families_pass
     )
     strongest = [
-        j.case_verdict
-        for j in judgments
-        if j.overall_rating.value in {"Excellent", "Strong"}
+        j.case_verdict for j in judgments if j.overall_rating.value in {"Excellent", "Strong"}
     ][:5]
-    weak = [
-        j.why
-        for j in judgments
-        if j.overall_rating.value in {"Weak", "Fail"}
-    ][:5]
+    weak = [j.why for j in judgments if j.overall_rating.value in {"Weak", "Fail"}][:5]
     return {
         "overall_verdict": "Validated" if validated else "Not Validated",
         "run_status": status.value,

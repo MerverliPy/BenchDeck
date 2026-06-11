@@ -33,13 +33,19 @@ class BenchmarkRunner:
         model: str,
         judge_model: str,
         plan_path: Path | None = None,
+        planner_gateway: Any = None,
+        agent_gateway: Any = None,
+        judge_gateway: Any = None,
     ) -> None:
         self.agent_a_path = agent_a_path
         self.agent_b_path = agent_b_path
         self.output_dir = output_dir
         self.plan_path = plan_path
-        self.agent_gateway = OpenAIGateway(GatewayConfig(model=model))
-        self.judge_gateway = OpenAIGateway(GatewayConfig(model=judge_model))
+        self._planner_gateway = planner_gateway
+        self._external_agent_gateway = agent_gateway
+        self._external_judge_gateway = judge_gateway
+        self.agent_gateway = agent_gateway or OpenAIGateway(GatewayConfig(model=model))
+        self.judge_gateway = judge_gateway or OpenAIGateway(GatewayConfig(model=judge_model))
         self.store = ArtifactStore(output_dir)
         self.metadata = RunMetadata(
             config={
@@ -89,9 +95,7 @@ class BenchmarkRunner:
                             infrastructure_errors.append(
                                 _infrastructure_record(case, label, "agent", failed_capture)
                             )
-                        self._checkpoint(
-                            all_runs, judgments, blocks, infrastructure_errors, plan
-                        )
+                        self._checkpoint(all_runs, judgments, blocks, infrastructure_errors, plan)
                         continue
                     if result.infrastructure_error:
                         self.metadata.infrastructure_failures += 1
@@ -103,9 +107,7 @@ class BenchmarkRunner:
                                 result.clarification_capture or result.agent_capture,
                             )
                         )
-                        self._checkpoint(
-                            all_runs, judgments, blocks, infrastructure_errors, plan
-                        )
+                        self._checkpoint(all_runs, judgments, blocks, infrastructure_errors, plan)
                         continue
 
                     self.metadata.model_completed_cases += 1
@@ -122,9 +124,7 @@ class BenchmarkRunner:
                                 "message": str(exc),
                             }
                         )
-                        self._checkpoint(
-                            all_runs, judgments, blocks, infrastructure_errors, plan
-                        )
+                        self._checkpoint(all_runs, judgments, blocks, infrastructure_errors, plan)
                         continue
                     judgments.append(judgment)
                     if judgment.judge_capture:
@@ -163,7 +163,8 @@ class BenchmarkRunner:
     def _load_or_generate_plan(self, agent_a: str, agent_b: str | None) -> BenchmarkPlan:
         if self.plan_path:
             return BenchmarkPlan.model_validate_json(self.plan_path.read_text(encoding="utf-8"))
-        payload, capture = self.agent_gateway.generate_json(
+        planner = self._planner_gateway or self.agent_gateway
+        payload, capture = planner.generate_json(
             instructions=PLANNER_INSTRUCTIONS,
             input_text=planner_input(agent_a, agent_b),
         )

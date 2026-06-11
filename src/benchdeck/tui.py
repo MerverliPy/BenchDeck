@@ -119,10 +119,7 @@ class BenchDeckTUI:
         m, t = self.snapshot.metadata, self.snapshot.tally
         planned = int(m.get("planned_cases") or t.get("cases_planned") or 0)
         judged = int(
-            m.get("judged_cases")
-            or t.get("cases_judged")
-            or t.get("cases_completed")
-            or 0
+            m.get("judged_cases") or t.get("cases_judged") or t.get("cases_completed") or 0
         )
         blocks = int(m.get("policy_blocks") or t.get("policy_blocks") or 0)
         infra = int(m.get("infrastructure_failures") or t.get("infrastructure_failures") or 0)
@@ -280,9 +277,7 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             members = {
-                Path(name).name: name
-                for name in archive.namelist()
-                if not name.endswith("/")
+                Path(name).name: name for name in archive.namelist() if not name.endswith("/")
             }
             for filename, default in defaults.items():
                 member = members.get(filename)

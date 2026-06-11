@@ -27,9 +27,7 @@ class ArtifactStore:
             ]
         else:
             payload = value
-        return self._atomic_write(
-            name, json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
-        )
+        return self._atomic_write(name, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
 
     def write_text(self, name: str, text: str) -> Path:
         return self._atomic_write(name, text.rstrip() + "\n")
