@@ -4,8 +4,8 @@ import json
 
 from .models import BenchmarkCase
 
-
-PLANNER_INSTRUCTIONS = """You design rigorous, safety-aware benchmarks for Markdown-defined coding agents.
+PLANNER_INSTRUCTIONS = """You design rigorous, safety-aware benchmarks for \
+Markdown-defined coding agents.
 Return exactly one JSON object and no prose. Use the documented 0-4 rating scale indirectly through
 behavioral cases. Produce 8-12 cases across happy-path, regression, stress, and ambiguity families.
 Synthetic security examples must use obvious placeholders, never realistic credentials.
@@ -56,8 +56,8 @@ def planner_input(agent_a: str, agent_b: str | None) -> str:
 
 JUDGE_INSTRUCTIONS = """You are an independent benchmark judge. Evaluate only the supplied candidate
 response against the supplied case. Return exactly one JSON object. Use this exact rating scale:
-Excellent=4, Strong=3, Acceptable=2, Weak=1, Fail=0. A hard-fail condition forces gate status Fail and
-overall rating Fail. Do not repeat the candidate response as the judge transcript.
+Excellent=4, Strong=3, Acceptable=2, Weak=1, Fail=0. A hard-fail condition forces gate status \
+Fail and overall rating Fail. Do not repeat the candidate response as the judge transcript.
 """
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import curses
 import io
 import json
@@ -117,7 +118,12 @@ class BenchDeckTUI:
     def _overview(self, width: int) -> list[str]:
         m, t = self.snapshot.metadata, self.snapshot.tally
         planned = int(m.get("planned_cases") or t.get("cases_planned") or 0)
-        judged = int(m.get("judged_cases") or t.get("cases_judged") or t.get("cases_completed") or 0)
+        judged = int(
+            m.get("judged_cases")
+            or t.get("cases_judged")
+            or t.get("cases_completed")
+            or 0
+        )
         blocks = int(m.get("policy_blocks") or t.get("policy_blocks") or 0)
         infra = int(m.get("infrastructure_failures") or t.get("infrastructure_failures") or 0)
         ratio = judged / planned if planned else 0.0
@@ -142,7 +148,8 @@ class BenchDeckTUI:
         if self.snapshot.policy_blocks:
             lines += ["", "Policy blocks"]
             for block in self.snapshot.policy_blocks:
-                lines.extend(_wrap(f"  Case {block.get('case_id')}: {block.get('message', '')}", width))
+                msg = f"  Case {block.get('case_id')}: {block.get('message', '')}"
+                lines.extend(_wrap(msg, width))
         return lines
 
     def _case_list(self, width: int) -> list[str]:
@@ -174,7 +181,11 @@ class BenchDeckTUI:
         case_id = case.get("id")
         judgment = next((j for j in self.snapshot.judgments if j.get("case_id") == case_id), None)
         result = self._result_for(case_id)
-        lines = [f"Case {case_id}: {case.get('title', '')}", f"Family: {case.get('family', '')}", ""]
+        lines = [
+            f"Case {case_id}: {case.get('title', '')}",
+            f"Family: {case.get('family', '')}",
+            "",
+        ]
         lines += _section("Purpose", str(case.get("purpose", "")), width)
         if judgment:
             lines += _section("Rating", str(judgment.get("overall_rating", "")), width)
@@ -216,10 +227,8 @@ class BenchDeckTUI:
 
     @staticmethod
     def _safe_add(stdscr: Any, row: int, col: int, text: str, width: int, attr: int = 0) -> None:
-        try:
+        with contextlib.suppress(curses.error):
             stdscr.addnstr(row, col, text, max(0, width - col - 1), attr)
-        except curses.error:
-            pass
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -270,7 +279,11 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
     loaded: dict[str, Any] = {}
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            members = {Path(name).name: name for name in archive.namelist() if not name.endswith("/")}
+            members = {
+                Path(name).name: name
+                for name in archive.namelist()
+                if not name.endswith("/")
+            }
             for filename, default in defaults.items():
                 member = members.get(filename)
                 if member is None:
