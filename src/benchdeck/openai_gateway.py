@@ -72,10 +72,14 @@ class OpenAIGateway:
             error={"type": "EmptyResponseError", "message": "No response was captured."}
         )
 
-    def generate_json(self, *, instructions: str, input_text: str) -> tuple[dict[str, Any], ResponseCapture]:
+    def generate_json(
+        self, *, instructions: str, input_text: str
+    ) -> tuple[dict[str, Any], ResponseCapture]:
         capture = self.generate(instructions=instructions, input_text=input_text)
         if not capture.text:
-            raise RuntimeError(f"Model returned no text: {capture.error or capture.raw_response}")
+            raise RuntimeError(
+                f"Model returned no text: {capture.error or capture.raw_response}"
+            )
         return _parse_json_object(capture.text), capture
 
 
@@ -85,9 +89,12 @@ def _extract_finish_reason(raw: dict[str, Any]) -> str | None:
             if item.get("status"):
                 return str(item["status"])
             for content in item.get("content") or []:
-                if isinstance(content, dict) and content.get("type") in {"refusal", "output_text"}:
-                    if content.get("type") == "refusal":
-                        return "refusal"
+                is_relevant = isinstance(content, dict) and content.get("type") in {
+                    "refusal",
+                    "output_text",
+                }
+                if is_relevant and content.get("type") == "refusal":
+                    return "refusal"
     return None
 
 

@@ -15,7 +15,9 @@ def build_final_verdict(
     ratings = Counter(j.overall_rating.value for j in judgments)
     gate_failures = int(tally.get("gate_failures", 0))
     family_scores = tally.get("family_scores") or {}
-    required_families_pass = bool(family_scores) and all(float(v) >= 3.0 for v in family_scores.values())
+    required_families_pass = bool(family_scores) and all(
+        float(v) >= 3.0 for v in family_scores.values()
+    )
     validated = (
         status == RunStatus.COMPLETED
         and gate_failures == 0
@@ -63,9 +65,11 @@ def final_verdict_markdown(verdict: dict[str, Any]) -> str:
     for family, score in verdict.get("family_scores", {}).items():
         lines.append(f"- `{family}`: {score}")
     lines += ["", "## Strongest capabilities", ""]
-    lines += [f"- {item}" for item in verdict.get("strongest_capabilities", [])] or ["- None recorded."]
+    strongest = verdict.get("strongest_capabilities", [])
+    lines += [f"- {item}" for item in strongest] or ["- None recorded."]
     lines += ["", "## Remaining weak spots", ""]
-    lines += [f"- {item}" for item in verdict.get("remaining_weak_spots", [])] or ["- None recorded."]
+    weak_spots = verdict.get("remaining_weak_spots", [])
+    lines += [f"- {item}" for item in weak_spots] or ["- None recorded."]
     lines += ["", "## Confidence", "", verdict.get("confidence_notes", "")]
     return "\n".join(lines) + "\n"
 

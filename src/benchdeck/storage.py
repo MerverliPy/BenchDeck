@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -20,10 +21,15 @@ class ArtifactStore:
         if isinstance(value, BaseModel):
             payload: Any = value.model_dump(mode="json")
         elif isinstance(value, list):
-            payload = [item.model_dump(mode="json") if isinstance(item, BaseModel) else item for item in value]
+            payload = [
+                item.model_dump(mode="json") if isinstance(item, BaseModel) else item
+                for item in value
+            ]
         else:
             payload = value
-        return self._atomic_write(name, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        return self._atomic_write(
+            name, json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+        )
 
     def write_text(self, name: str, text: str) -> Path:
         return self._atomic_write(name, text.rstrip() + "\n")
@@ -46,8 +52,6 @@ class ArtifactStore:
                 os.fsync(handle.fileno())
             os.replace(temp_name, target)
         finally:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 os.unlink(temp_name)
-            except FileNotFoundError:
-                pass
         return target

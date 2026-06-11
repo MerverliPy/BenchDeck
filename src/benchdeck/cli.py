@@ -10,7 +10,9 @@ from .tui import BenchDeckTUI
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="benchdeck", description="Agent benchmark harness and TUI")
+    parser = argparse.ArgumentParser(
+        prog="benchdeck", description="Agent benchmark harness and TUI"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="Run a benchmark")

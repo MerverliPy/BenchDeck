@@ -2,7 +2,6 @@ from pathlib import Path
 
 from benchdeck.inspect import inspect_run
 
-
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "original_run.zip"
 
 

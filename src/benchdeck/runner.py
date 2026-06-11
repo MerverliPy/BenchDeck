@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -138,7 +138,7 @@ class BenchmarkRunner:
                 policy_blocks=len(blocks),
                 infrastructure_failures=self.metadata.infrastructure_failures,
             )
-            self.metadata.completed_at = datetime.now(timezone.utc).isoformat()
+            self.metadata.completed_at = datetime.now(UTC).isoformat()
             self.metadata.status = self._final_status(plan, judgments, blocks)
             verdict = build_final_verdict(plan, judgments, tally, self.metadata.status)
             self.store.write_json("summary_tally.json", tally)
@@ -148,13 +148,13 @@ class BenchmarkRunner:
             self.store.write_json("run_metadata.json", self.metadata)
             return self.metadata.status
         except KeyboardInterrupt:
-            self.metadata.completed_at = datetime.now(timezone.utc).isoformat()
+            self.metadata.completed_at = datetime.now(UTC).isoformat()
             self.metadata.status = RunStatus.ABORTED
             self.metadata.stop_reason = "Interrupted by user"
             self.store.write_json("run_metadata.json", self.metadata)
             return self.metadata.status
         except Exception as exc:
-            self.metadata.completed_at = datetime.now(timezone.utc).isoformat()
+            self.metadata.completed_at = datetime.now(UTC).isoformat()
             self.metadata.status = RunStatus.INFRASTRUCTURE_FAILED
             self.metadata.stop_reason = f"{type(exc).__name__}: {exc}"
             self.store.write_json("run_metadata.json", self.metadata)
@@ -181,7 +181,9 @@ class BenchmarkRunner:
                 infrastructure_error=first.error is None,
             )
 
-        needs_clarification = bool(case.clarification_answer_key) and _looks_like_question(first.text)
+        needs_clarification = bool(case.clarification_answer_key) and _looks_like_question(
+            first.text
+        )
         if needs_clarification:
             follow_up = (
                 "Original task:\n"
