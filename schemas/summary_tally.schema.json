@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/benchdeck/summary_tally.schema.json",
+  "type": "object",
+  "required": ["score_scale", "cases_planned", "cases_judged", "rating_counts", "gate_failures"],
+  "properties": {
+    "score_scale": {
+      "const": {"Excellent": 4, "Strong": 3, "Acceptable": 2, "Weak": 1, "Fail": 0}
+    },
+    "cases_planned": {"type": "integer", "minimum": 0},
+    "cases_judged": {"type": "integer", "minimum": 0},
+    "rating_counts": {"type": "object"},
+    "gate_failures": {"type": "integer", "minimum": 0},
+    "family_scores": {"type": "object"},
+    "policy_blocks": {"type": "integer", "minimum": 0},
+    "infrastructure_failures": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": true
+}

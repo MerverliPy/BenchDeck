@@ -5,7 +5,7 @@ for narrow SSH sessions, including Termius on an iPhone.
 
 It turns one or two Markdown agent files into a benchmark plan, runs isolated cases, handles one concrete
 clarification turn, judges responses, and writes continuously viewable artifacts. The supplied benchmark
-bundle is included under `fixtures/original_run` as a regression fixture.
+bundle is preserved at `fixtures/original_run.zip` as an immutable regression fixture.
 
 ## Why this repository exists
 
@@ -36,9 +36,10 @@ benchdeck run \
 Use a frozen plan instead of generating one:
 
 ```bash
+unzip -p fixtures/original_run.zip '*/benchmark_plan.json' > /tmp/benchmark_plan.json
 benchdeck run \
   --agent-a examples/repository-integrity-agent.md \
-  --plan fixtures/original_run/benchmark_plan.json \
+  --plan /tmp/benchmark_plan.json \
   --output-dir benchmark_out
 ```
 
@@ -53,7 +54,7 @@ benchdeck tui benchmark_out
 Open the supplied run immediately:
 
 ```bash
-benchdeck tui fixtures/original_run
+benchdeck tui fixtures/original_run.zip
 ```
 
 Controls: `1-4` screens, `h/l` tabs, `j/k` move or scroll, Enter details, `r` reload, `q` quit.
@@ -61,7 +62,7 @@ Controls: `1-4` screens, `h/l` tabs, `j/k` move or scroll, Enter details, `r` re
 ## Inspect existing artifacts
 
 ```bash
-benchdeck inspect fixtures/original_run
+benchdeck inspect fixtures/original_run.zip
 ```
 
 The command detects incomplete coverage, empty outputs, duplicated judge transcripts, undeclared scoring

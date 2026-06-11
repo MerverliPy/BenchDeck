@@ -1,0 +1,33 @@
+name: Materialize benchmark fixture
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fixtures/original_run.zip.b64.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode and verify fixture
+        shell: bash
+        run: |
+          cat fixtures/original_run.zip.b64.* | base64 --decode > fixtures/original_run.zip
+          echo "20cb88ddde4bc5005adf5eeb501dd1c9bfc8ed971ed82668ecfe8162d9d22444  fixtures/original_run.zip" | sha256sum --check --strict
+          python -m zipfile -t fixtures/original_run.zip
+          rm fixtures/original_run.zip.b64.*
+      - name: Commit materialized fixture
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A fixtures
+          git commit -m "Materialize original benchmark fixture"
+          git push
