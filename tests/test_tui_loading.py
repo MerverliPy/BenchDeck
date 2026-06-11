@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from benchdeck.tui import (
+    BenchDeckTUI,
     Snapshot,
     _load_zip_bytes,
     load_snapshot,
@@ -24,8 +25,6 @@ from benchdeck.tui import (
 
 def test_result_for_respects_agent_label_when_provided() -> None:
     """_result_for with agent_label returns only the matching agent's result."""
-
-    from benchdeck.tui import BenchDeckTUI
 
     tui = BenchDeckTUI(Path("/tmp/nonexistent_tui"))
     tui.snapshot = Snapshot(
@@ -54,7 +53,6 @@ def test_result_for_respects_agent_label_when_provided() -> None:
 def test_tui_snapshot_case_plan_has_no_agent_label() -> None:
     """The TUI's _cases method reads from the plan, which has no agent_label
     on individual cases."""
-    from benchdeck.tui import BenchDeckTUI
 
     tui = BenchDeckTUI(Path("/tmp/nonexistent_tui"))
     tui.snapshot = Snapshot(
@@ -97,10 +95,14 @@ def make_zip_bytes(files: dict[str, Any]) -> bytes:
     return buf.getvalue()
 
 
-def test_zip_duplicate_basename_not_rejected() -> None:
-    """_load_zip_bytes uses Path(name).name as dict key, silently overwriting
-    duplicate filenames."""
-    # Two entries with the same basename in different directories.
+def test_zip_duplicate_basename_silently_overwrites() -> None:
+    """Known defect: _load_zip_bytes uses Path(name).name as dict key.
+    Two ZIP entries with the same basename in different subdirectories
+    result in a silent last-one-wins overwrite. No error is raised.
+    This test documents the current (incorrect) behavior. When the
+    underlying defect is fixed (duplicate basenames should raise
+    ValueError), update this test to assert the ValueError instead.
+    """
     duplicate_zip = make_zip_bytes(
         {
             "run_metadata.json": {"status": "completed", "planned_cases": 8},
@@ -108,8 +110,9 @@ def test_zip_duplicate_basename_not_rejected() -> None:
         }
     )
     snapshot = _load_zip_bytes(duplicate_zip)
-    # Only the last one wins — no error raised about duplicates.
-    assert snapshot.metadata is not None, "Duplicate basenames should be rejected"
+    # Currently loads without error — documents the known silent-overwrite bug.
+    assert snapshot is not None
+    assert snapshot.metadata is not None
 
 
 def test_zip_loading_handles_corrupt_zip() -> None:
@@ -249,7 +252,6 @@ def test_bundled_fixture_has_metadata() -> None:
 
 def test_malformed_plan_json_defaults_to_empty() -> None:
     """When benchmark_plan.json is malformed, the TUI defaults to {} silently."""
-    from benchdeck.tui import BenchDeckTUI
 
     tui = BenchDeckTUI(Path("/tmp/nonexistent_tui2"))
     tui.snapshot = Snapshot(plan={})

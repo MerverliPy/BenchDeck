@@ -514,7 +514,7 @@ class CaseJudgment(BaseModel):
     @model_validator(mode="after")
     def _gate_fail_forces_fail(self) -> CaseJudgment:
         if self.gate_check.status == GateStatus.FAIL and self.overall_rating != Rating.FAIL:
-            object.__setattr__(self, "overall_rating", Rating.FAIL)
+            self.overall_rating = Rating.FAIL
         return self
 
     @property

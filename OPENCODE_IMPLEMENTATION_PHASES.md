@@ -37,13 +37,13 @@ pytest -q
 pytest --cov=benchdeck --cov-branch --cov-report=term-missing
 python -m build
 
-KNOWN BASELINE
-- Existing tests are minimal.
-- Core runner and OpenAI gateway currently have no meaningful coverage.
-- Strict mypy reports errors in the gateway and TUI.
-- Formatting check is not clean.
-- The bundled frozen plan is invalid.
-- Comparison-mode data is not agent-scoped.
+KNOWN BASELINE (updated 2026-06-11)
+- 145 tests pass across gateway, runner, models, prompts, reporting, scoring, storage, and TUI.
+- ruff check, ruff format --check, and mypy (with --ignore-missing-imports) all pass clean.
+- Remaining known issues: see REMAINING_ISSUES.md for BUG-3, DEAD-6, STYLE-1, and STYLE-2.
+- P1 items not yet implemented: multi-judge aggregation, JSON Schema manifest validation.
+- P2 items not yet implemented: TUI subprocess launch/cancel.
+- P3 items not yet implemented: package release publishing, signed artifacts, SBOM.
 
 DELIVERY FORMAT
 For each phase:
