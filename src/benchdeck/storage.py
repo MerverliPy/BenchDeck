@@ -10,6 +10,16 @@ from typing import Any
 from pydantic import BaseModel
 
 
+def _serialize(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize(item) for item in value]
+    return value
+
+
 class ArtifactStore:
     """Atomic JSON/text artifact writer safe for a concurrently watching TUI."""
 
@@ -18,15 +28,7 @@ class ArtifactStore:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def write_json(self, name: str, value: BaseModel | dict[str, Any] | list[Any]) -> Path:
-        if isinstance(value, BaseModel):
-            payload: Any = value.model_dump(mode="json")
-        elif isinstance(value, list):
-            payload = [
-                item.model_dump(mode="json") if isinstance(item, BaseModel) else item
-                for item in value
-            ]
-        else:
-            payload = value
+        payload = _serialize(value)
         return self._atomic_write(name, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
 
     def write_text(self, name: str, text: str) -> Path:

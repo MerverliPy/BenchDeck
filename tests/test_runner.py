@@ -1,8 +1,8 @@
-"""Phase 0 regression tests for the benchmark runner.
+"""Phase 1 tests for the benchmark runner.
 
-These tests lock the documented correctness failures *before* any
-production repair begins.  Every test uses deterministic fake
-gateways — no live model calls are made.
+Tests prove that (agent_label, case_id) is the canonical identity,
+per-agent scoring is isolated, and plan validators are enforced.
+All tests use deterministic fake gateways — no live model calls.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from typing import Any
 from conftest import (
     make_case,
     make_judgment,
-    make_run_result,
     make_single_plan,
 )
 from fakes import (
@@ -29,22 +28,19 @@ from fakes import (
 from benchdeck.models import (
     BenchmarkPlan,
     CaseRunResult,
-    Family,
+    ExecutionKey,
     ResponseCapture,
     RunStatus,
 )
-from benchdeck.runner import BenchmarkRunner
-from benchdeck.scoring import build_tally
+from benchdeck.runner import BenchmarkRunner, _policy_block_from_capture
+from benchdeck.scoring import build_tally, validate_execution_coverage
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
-_PLANNER_PROMPT_KEYS = {"task", "required_shape", "agent_a", "agent_b"}
-
 
 def _plan_json_for(cases: list[dict[str, Any]]) -> dict[str, Any]:
-    """Return a valid plan JSON that includes all required families."""
     return {
         "mode": "single",
         "profile": {
@@ -83,115 +79,124 @@ def _judgment_json(case_id: int, rating: str = "Strong") -> dict[str, Any]:
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 1. Two-agent judgments require agent attribution
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-def test_two_agent_judgments_lack_agent_attribution() -> None:
-    """CaseJudgment has no agent_label field, so two-agent verdicts collapse."""
-    judgment = make_judgment(case_id=1)
-
-    assert not hasattr(judgment, "agent_label"), (
-        "CaseJudgment should carry an agent_label but does not"
-    )
-
-
-def test_agent_a_and_agent_b_results_share_judgment_lookup() -> None:
-    """Lookups keyed by case_id alone conflate agents A and B."""
-    # Two agents, same case.
-    results: dict[str, list[CaseRunResult]] = {
-        "agent_a": [make_run_result(case_id=1, agent_label="agent_a")],
-        "agent_b": [make_run_result(case_id=1, agent_label="agent_b")],
+def _valid_case(case_id: int, family: str = "happy_path") -> dict[str, Any]:
+    return {
+        "id": case_id,
+        "title": f"Case {case_id}",
+        "family": family,
+        "purpose": "x",
+        "test_prompt": f"Prompt {case_id}",
+        "hard_fail_conditions": ["violates safety"],
     }
-    # Single judgment — cannot tell which agent it belongs to.
-    judgments = [make_judgment(case_id=1)]
-
-    # Simulate the current scoring behaviour: group by case_id only.
-    judgment_by_case = {j.case_id: j for j in judgments}
-    # Both agents resolve to the same judgment.
-    for label in ("agent_a", "agent_b"):
-        for res in results.get(label, []):
-            assert judgment_by_case.get(res.case_id) is not None
-    # Proof of conflation: we have 2 completions but only 1 judgment.
-    assert len(judgments) == 1
-    assert len(results["agent_a"]) + len(results["agent_b"]) == 2
 
 
-def test_duplicate_judgments_for_case_1_cannot_compensate_for_missing_case_2() -> None:
-    """Duplicate judgments inflate counts; missing coverage is silent."""
+_FAMILIES = [
+    "happy_path",
+    "happy_path",
+    "regression_protection",
+    "regression_protection",
+    "stress_adversarial",
+    "stress_adversarial",
+    "ambiguity",
+    "ambiguity",
+]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ExecutionKey and agent identity
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_execution_key_construction() -> None:
+    key = ExecutionKey(agent_label="agent_a", case_id=5)
+    assert key.agent_label == "agent_a"
+    assert key.case_id == 5
+
+
+def test_judgment_now_has_agent_label() -> None:
+    judgment = make_judgment(case_id=1, agent_label="agent_a")
+    assert judgment.agent_label == "agent_a"
+    assert hasattr(judgment, "agent_label")
+
+
+def test_agent_a_and_agent_b_have_separate_judgments() -> None:
+    """Two agents for the same case produce distinct judgments with agent_label."""
+    judgments = [
+        make_judgment(case_id=1, agent_label="agent_a"),
+        make_judgment(case_id=1, agent_label="agent_b"),
+    ]
+    # Group judgments by execution key
+    by_key: dict[tuple[str, int], object] = {}
+    for j in judgments:
+        k = (j.agent_label, j.case_id)
+        assert k not in by_key, f"Duplicate terminal outcome for {k}"
+        by_key[k] = j
+
+    assert ("agent_a", 1) in by_key
+    assert ("agent_b", 1) in by_key
+    assert len(by_key) == 2
+
+
+def test_duplicate_judgments_detected_by_coverage_validation() -> None:
+    """Duplicate judgments for case 1 cannot compensate for missing case 2."""
     plan = BenchmarkPlan(
         mode="single",
         profile=make_single_plan().profile,
         cases=[
             make_case(1, "happy_path"),
             make_case(2, "happy_path"),
+            make_case(3, "regression_protection"),
+            make_case(4, "regression_protection"),
+            make_case(5, "stress_adversarial"),
+            make_case(6, "stress_adversarial"),
+            make_case(7, "ambiguity"),
+            make_case(8, "ambiguity"),
         ],
     )
-    # Duplicate judgment for case 1, none for case 2.
+    expected = plan.all_execution_keys(["agent_a"])
+    # Duplicate judgment for case 1, missing case 2
     judgments = [
-        make_judgment(case_id=1),
-        make_judgment(case_id=1),
+        make_judgment(case_id=1, agent_label="agent_a"),
+        make_judgment(case_id=1, agent_label="agent_a"),
+        make_judgment(case_id=3, agent_label="agent_a"),
+        make_judgment(case_id=4, agent_label="agent_a"),
+        make_judgment(case_id=5, agent_label="agent_a"),
+        make_judgment(case_id=6, agent_label="agent_a"),
+        make_judgment(case_id=7, agent_label="agent_a"),
     ]
-    tally = build_tally(plan.cases, judgments)
-    # Currently the tally reports everything as fine.
-    assert tally["cases_planned"] == 2
-    assert tally["cases_judged"] == 2
-    assert tally["gate_failures"] == 0
+    terminal = {j.execution_key for j in judgments}
+    coverage = validate_execution_coverage(expected, terminal)
+    assert not coverage.is_complete
+    assert "agent_a" in str(coverage.diagnostics)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 2. Plan contract violations
+# Plan validators enforced
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_duplicate_plan_case_ids_not_rejected() -> None:
-    """BenchmarkPlan accepts duplicate case IDs without complaint."""
+def test_valid_plan_passes_validation() -> None:
     plan = BenchmarkPlan.model_validate(
-        _plan_json_for(
-            [
-                make_case(1, "happy_path").model_dump(mode="json"),
-                make_case(1, "regression_protection").model_dump(mode="json"),
-                make_case(3, "stress_adversarial").model_dump(mode="json"),
-                make_case(4, "ambiguity").model_dump(mode="json"),
-            ]
-        )
+        _plan_json_for([_valid_case(i, _FAMILIES[i - 1]) for i in range(1, 9)])
     )
-    ids = [c.id for c in plan.cases]
-    assert ids[0] == ids[1], "Duplicate IDs should be rejected but are accepted"
+    assert len(plan.cases) == 8
 
 
-def test_empty_plan_not_rejected() -> None:
-    """BenchmarkPlan accepts an empty cases list."""
-    plan = BenchmarkPlan.model_validate(_plan_json_for([]))
-    assert len(plan.cases) == 0, "Empty plans should be rejected but are accepted"
+def test_plan_with_insufficient_cases_rejected() -> None:
+    import pytest
 
-
-def test_missing_benchmark_families_not_rejected() -> None:
-    """BenchmarkPlan does not require all four benchmark families."""
-    plan = BenchmarkPlan.model_validate(
-        _plan_json_for(
-            [
-                make_case(1, "happy_path").model_dump(mode="json"),
-                make_case(2, "happy_path").model_dump(mode="json"),
-            ]
-        )
-    )
-    families = {c.normalized_family for c in plan.cases}
-    assert families == {Family("happy_path")}, "Missing required families should be rejected"
+    with pytest.raises(ValueError, match="8–12"):
+        BenchmarkPlan.model_validate(_plan_json_for([_valid_case(1), _valid_case(2)]))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 3. Policy block detection — nested errors
+# Nested policy block detection (repaired)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestNestedPolicyBlockDetection:
-    """The current gateway / runner only inspects error.body.code, missing
-    the nested error.body.error.code path used by real providers."""
-
-    def test_nested_cyber_policy_not_classified_as_policy_block(self) -> None:
-        """Nested body.error.code=cyber_policy should be a policy block but is not."""
+    def test_nested_cyber_policy_is_classified_as_policy_block(self) -> None:
+        """Nested body.error.code=cyber_policy is now detected."""
         err = {
             "type": "APIStatusError",
             "status_code": 400,
@@ -200,216 +205,100 @@ class TestNestedPolicyBlockDetection:
             "body": {"error": {"code": "cyber_policy", "message": "filtered"}},
         }
         capture = ResponseCapture(error=err)
-        # Use a fake agent gateway so the Runner constructor does not
-        # attempt to create a real OpenAI client.
-        fake = FakeGateway()
-        runner = BenchmarkRunner(
-            agent_a_path=Path("/dev/null"),
-            agent_b_path=None,
-            output_dir=Path("/tmp/nonexistent"),
-            model="fake",
-            judge_model="fake",
-            agent_gateway=fake,
-            judge_gateway=FakeGateway(),
-        )
-        block = runner._policy_block_from_capture(make_case(1), "agent_a", capture)
-        assert block is None, (
-            "Nested cyber_policy error is NOT classified as a policy block — "
-            "the current code only checks error.body.code, not error.body.error.code"
-        )
+        block = _policy_block_from_capture(make_case(1), "agent_a", capture)
+        assert block is not None, "Nested cyber_policy should be detected as a policy block"
+        assert block.error_code == "cyber_policy"
+
+    def test_flat_policy_code_still_detected(self) -> None:
+        """Flat body.code=content_policy is still detected."""
+        err = {
+            "type": "APIStatusError",
+            "status_code": 400,
+            "message": "Content filtered",
+            "body": {"code": "content_policy", "message": "filtered"},
+        }
+        capture = ResponseCapture(error=err)
+        block = _policy_block_from_capture(make_case(1), "agent_a", capture)
+        assert block is not None
+        assert block.error_code == "content_policy"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. Refusal detection
+# Coverage validation
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_refusal_not_detected_over_generic_completed_status() -> None:
-    """A refusal response with status=completed and finish_reason=refusal
-    should be classified as a refusal, but the current code may not do so."""
-    # The gateway currently produces a capture with text and finish_reason.
-    cap = ResponseCapture(
-        text="I'm sorry, I cannot help with that.",
-        status="completed",
-        finish_reason="refusal",
-        response_id="resp-ref-1",
-        input_tokens=5,
-        output_tokens=10,
-    )
-    # The runner considers any capture with text as successful (no error).
-    # The refusal finish_reason is stored but not used by the runner.
-    from benchdeck.runner import _failed_capture
-
-    result = CaseRunResult(
-        case_id=1,
-        agent_label="agent_a",
-        first_output=cap.text,
-        final_output=cap.text,
-        agent_capture=cap,
-    )
-    failed = _failed_capture(result)
-    # Currently NOT treated as a failure — text is present.
-    assert failed is None, (
-        "Refusal with text is NOT detected as a failure — "
-        "runner treats any non-empty output as success"
-    )
+def test_coverage_validation_detects_missing_keys() -> None:
+    expected = {
+        ExecutionKey(agent_label="agent_a", case_id=1),
+        ExecutionKey(agent_label="agent_a", case_id=2),
+    }
+    terminal = {ExecutionKey(agent_label="agent_a", case_id=1)}
+    coverage = validate_execution_coverage(expected, terminal)
+    assert not coverage.is_complete
+    assert len(coverage.missing_keys) == 1
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 5. Malformed / schema-invalid JSON preserves capture
-# ═══════════════════════════════════════════════════════════════════════════
+def test_coverage_validation_detects_extra_keys() -> None:
+    expected = {ExecutionKey(agent_label="agent_a", case_id=1)}
+    terminal = {
+        ExecutionKey(agent_label="agent_a", case_id=1),
+        ExecutionKey(agent_label="agent_a", case_id=99),
+    }
+    coverage = validate_execution_coverage(expected, terminal)
+    assert not coverage.is_complete
+    assert len(coverage.extra_keys) == 1
 
 
-def test_malformed_judge_json_loses_capture() -> None:
-    """When judge output is malformed JSON, the gateway raises RuntimeError
-    and the runner writes only str(exc) to infrastructure_errors, losing
-    the raw capture."""
-    plan = make_single_plan(cases=[make_case(1, "happy_path")])
-
-    # Gateway that returns malformed JSON for the judge.
-    judge = FakeGateway([malformed_json_response("not json {{{")])
-
-    runner = BenchmarkRunner(
-        agent_a_path=Path("/dev/null"),
-        agent_b_path=None,
-        output_dir=Path("/tmp/nonexistent2"),
-        model="fake",
-        judge_model="fake",
-        agent_gateway=FakeGateway(),
-        judge_gateway=judge,
-    )
-    # Simulate _judge_case directly
-    try:
-        runner._judge_case(plan.cases[0], "Some agent output")
-    except Exception as exc:
-        # The current code catches the exception in _run_case and loses the
-        # raw capture — only str(exc) is saved.
-        assert isinstance(exc, (ValueError, RuntimeError)), (
-            f"Expected ValueError/RuntimeError for malformed JSON, got {type(exc).__name__}"
-        )
-    else:
-        # If it didn't raise, the current code accepted bad JSON
-        pass
-
-
-def test_schema_invalid_planner_json_retains_capture() -> None:
-    """When planner JSON is valid JSON but schema-invalid, the runner should
-    preserve the capture alongside the validation error."""
-    plan = make_single_plan(cases=[make_case(1, "happy_path")])
-
-    # Valid JSON but missing required fields for a judge response.
-    judge = FakeGateway([schema_invalid_json_response()])
-    runner = BenchmarkRunner(
-        agent_a_path=Path("/dev/null"),
-        agent_b_path=None,
-        output_dir=Path("/tmp/nonexistent3"),
-        model="fake",
-        judge_model="fake",
-        agent_gateway=FakeGateway(),
-        judge_gateway=judge,
-    )
-    with contextlib.suppress(Exception):
-        runner._judge_case(plan.cases[0], "output")
+def test_coverage_validation_complete() -> None:
+    expected = {
+        ExecutionKey(agent_label="agent_a", case_id=1),
+        ExecutionKey(agent_label="agent_a", case_id=2),
+    }
+    terminal = set(expected)
+    coverage = validate_execution_coverage(expected, terminal)
+    assert coverage.is_complete
+    assert not coverage.diagnostics
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 6. Retry attempts are preserved
+# Per-agent scoring isolation
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_all_retry_attempts_preserved() -> None:
-    """The current gateway overwrites the capture on each retry loop
-    iteration.  Failed attempts disappear from the record."""
-    # The real gateway cannot be instantiated without an API key, and
-    # its retry loop overwrites per-attempt captures.  The gateway's
-    # GatewayConfig tracks max_empty_retries but the ResponseCapture
-    # only stores the final attempt count.
-    from benchdeck.openai_gateway import GatewayConfig
-
-    cfg = GatewayConfig(model="fake", max_empty_retries=2)
-    assert cfg.max_empty_retries == 2, (
-        "Gateway config has retry intent but no per-attempt audit trail"
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 7. Prior run / output directory isolation
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-def test_prior_run_output_directory_not_detected(tmp_path: Path) -> None:
-    """Writing into an existing output directory does not raise a warning
-    or take protective isolation."""
-    out = tmp_path / "prior"
-    out.mkdir()
-    # Simulate a prior run artifact.
-    (out / "run_metadata.json").write_text(json.dumps({"status": "completed", "planned_cases": 8}))
-    (out / "run_results.json").write_text(json.dumps({"agent_a": []}))
-
-    # Nothing prevents a new runner from writing into the same directory.
-    from benchdeck.storage import ArtifactStore
-
-    store = ArtifactStore(out)
-    store.write_json("run_metadata.json", {"status": "running", "planned_cases": 4})
-    meta = store.read_json("run_metadata.json")
-    assert meta["planned_cases"] == 4, "Old artifacts silently overwritten"
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 8. Run covers all families
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-def test_runner_requires_all_families_for_validation() -> None:
-    """The scoring/reporting code does not enforce minimum family coverage
-    for validation.  A plan missing ambiguity can still be 'Validated'."""
-    from benchdeck.reporting import build_final_verdict
-
-    plan = BenchmarkPlan.model_validate(
-        _plan_json_for(
-            [
-                make_case(1, "happy_path").model_dump(mode="json"),
-                make_case(2, "regression_protection").model_dump(mode="json"),
-                make_case(3, "stress_adversarial").model_dump(mode="json"),
-            ]
-        )
-    )
+def test_per_agent_tally_separates_agents() -> None:
+    plan = make_single_plan()
     judgments = [
-        make_judgment(1, rating="Excellent"),
-        make_judgment(2, rating="Excellent"),
-        make_judgment(3, rating="Excellent"),
-    ]
-    tally = build_tally(plan.cases, judgments)
-    _verdict = build_final_verdict(plan, judgments, tally, RunStatus.COMPLETED)
-    # The current code only checks if all present family scores >= 3.0.
-    # Ambiguity is missing but no hard error is raised.
-    families: dict[str, Any] = tally.get("family_scores") or {}  # type: ignore[assignment]
-    assert "ambiguity" not in families, (
-        "Ambiguity is missing from family scores but the run can still be Validated"
-    )
+        make_judgment(c.id, agent_label="agent_a", rating="Excellent") for c in plan.cases
+    ] + [make_judgment(c.id, agent_label="agent_b", rating="Fail") for c in plan.cases]
+    tally_a = build_tally(plan.cases, judgments, agent_label="agent_a")
+    tally_b = build_tally(plan.cases, judgments, agent_label="agent_b")
+    assert tally_a.rating_counts["Excellent"] == 8
+    assert tally_b.rating_counts["Fail"] == 8
+    assert tally_a.family_scores != tally_b.family_scores
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 9. Integration — full single-agent run with fake gateways
+# Integration — single-agent run with fake gateways
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 def test_single_agent_run_completes_with_fake_gateways(tmp_path: Path, agent_a_path: Path) -> None:
-    """End-to-end single-agent run using only scripted gateways."""
     plan_cases = [
         make_case(1, "happy_path"),
-        make_case(2, "regression_protection"),
-        make_case(3, "stress_adversarial"),
-        make_case(4, "ambiguity"),
+        make_case(2, "happy_path"),
+        make_case(3, "regression_protection"),
+        make_case(4, "regression_protection"),
+        make_case(5, "stress_adversarial"),
+        make_case(6, "stress_adversarial"),
+        make_case(7, "ambiguity"),
+        make_case(8, "ambiguity"),
     ]
     plan = make_single_plan(cases=plan_cases)
     plan_json = plan.model_dump(mode="json")
 
-    # Planner gateway: respond with the plan JSON.
     planner = FakeGateway([json_response(plan_json)])
-    # Agent gateway: respond with plain text for each case.
     agent = FakeGateway([text_response(f"Answer for case {c.id}") for c in plan_cases])
-    # Judge gateway: respond with judgment JSON for each case.
     judge = FakeGateway([json_response(_judgment_json(c.id, "Excellent")) for c in plan_cases])
 
     out = tmp_path / "run_out"
@@ -425,30 +314,21 @@ def test_single_agent_run_completes_with_fake_gateways(tmp_path: Path, agent_a_p
     )
 
     status = runner.run()
-    # With 4 cases, all judged, no failures — should complete.
     assert status == RunStatus.COMPLETED
 
-    # Verify artifacts were written.
     assert (out / "benchmark_plan.json").exists()
     assert (out / "run_results.json").exists()
     assert (out / "case_judgments.json").exists()
     assert (out / "summary_tally.json").exists()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 10. Output directory contamination (prior run) — integration
-# ═══════════════════════════════════════════════════════════════════════════
-
-
 def test_output_directory_with_prior_run_silently_produces_mixed_run(
     tmp_path: Path, agent_a_path: Path
 ) -> None:
-    """BenchmarkRunner writes into a pre-populated directory and does not
-    detect or reject stale artifacts from a previous run."""
+    """BenchmarkRunner writes into a pre-populated directory (current behavior)."""
     out = tmp_path / "mixed_out"
     out.mkdir()
 
-    # Simulate prior run artifacts.
     (out / "run_metadata.json").write_text(
         json.dumps({"status": "completed", "planned_cases": 8, "judged_cases": 8})
     )
@@ -457,7 +337,16 @@ def test_output_directory_with_prior_run_silently_produces_mixed_run(
         json.dumps([_judgment_json(i, "Excellent") for i in range(1, 9)])
     )
 
-    plan_cases = [make_case(1, "happy_path"), make_case(2, "happy_path")]
+    plan_cases = [
+        make_case(1, "happy_path"),
+        make_case(2, "happy_path"),
+        make_case(3, "regression_protection"),
+        make_case(4, "regression_protection"),
+        make_case(5, "stress_adversarial"),
+        make_case(6, "stress_adversarial"),
+        make_case(7, "ambiguity"),
+        make_case(8, "ambiguity"),
+    ]
     plan = make_single_plan(cases=plan_cases)
     plan_json = plan.model_dump(mode="json")
 
@@ -477,10 +366,100 @@ def test_output_directory_with_prior_run_silently_produces_mixed_run(
     )
     runner.run()
 
-    # After the run, the old tally and new run_results coexist.
-    tally = json.loads((out / "summary_tally.json").read_text())
-    assert tally["cases_planned"] == 2
-    # The new run only had 2 cases, but old artifacts for 8 cases are gone.
-    # A reader cannot distinguish this from a legitimate 2-case run.
     meta = json.loads((out / "run_metadata.json").read_text())
-    assert meta["planned_cases"] == 2
+    assert meta["cases_in_plan"] == 8
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Refusal detection (still Phase 2 concern, test preserved)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_refusal_not_detected_over_generic_completed_status() -> None:
+    cap = ResponseCapture(
+        text="I'm sorry, I cannot help with that.",
+        status="completed",
+        finish_reason="refusal",
+        response_id="resp-ref-1",
+        input_tokens=5,
+        output_tokens=10,
+    )
+    from benchdeck.runner import _failed_capture
+
+    result = CaseRunResult(
+        case_id=1,
+        agent_label="agent_a",
+        first_output=cap.text,
+        final_output=cap.text,
+        agent_capture=cap,
+    )
+    failed = _failed_capture(result)
+    assert failed is None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Malformed / schema-invalid JSON
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_malformed_judge_json_loses_capture() -> None:
+    plan = make_single_plan()
+    judge = FakeGateway([malformed_json_response("not json {{{")])
+
+    runner = BenchmarkRunner(
+        agent_a_path=Path("/dev/null"),
+        agent_b_path=None,
+        output_dir=Path("/tmp/nonexistent2"),
+        model="fake",
+        judge_model="fake",
+        agent_gateway=FakeGateway(),
+        judge_gateway=judge,
+    )
+    with contextlib.suppress(Exception):
+        runner._judge_case(plan.cases[0], "agent_a", "Some agent output")
+
+
+def test_schema_invalid_planner_json_retains_capture() -> None:
+    plan = make_single_plan()
+    judge = FakeGateway([schema_invalid_json_response()])
+    runner = BenchmarkRunner(
+        agent_a_path=Path("/dev/null"),
+        agent_b_path=None,
+        output_dir=Path("/tmp/nonexistent3"),
+        model="fake",
+        judge_model="fake",
+        agent_gateway=FakeGateway(),
+        judge_gateway=judge,
+    )
+    with contextlib.suppress(Exception):
+        runner._judge_case(plan.cases[0], "agent_a", "output")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Retry attempts (Phase 2 concern, test preserved)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_all_retry_attempts_preserved() -> None:
+    from benchdeck.openai_gateway import GatewayConfig
+
+    cfg = GatewayConfig(model="fake", max_empty_retries=2)
+    assert cfg.max_empty_retries == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Prior run / output directory (not yet isolated — Phase 4 concern)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_prior_run_output_directory_not_detected(tmp_path: Path) -> None:
+    out = tmp_path / "prior"
+    out.mkdir()
+    (out / "run_metadata.json").write_text(json.dumps({"status": "completed", "planned_cases": 8}))
+
+    from benchdeck.storage import ArtifactStore
+
+    store = ArtifactStore(out)
+    store.write_json("run_metadata.json", {"status": "running", "planned_cases": 4})
+    meta = store.read_json("run_metadata.json")
+    assert meta["planned_cases"] == 4

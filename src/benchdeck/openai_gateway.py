@@ -33,7 +33,7 @@ class OpenAIGateway:
                     input=input_text,
                 )
                 raw = response.to_dict()
-                usage = raw.get("usage") or {}
+                usage: dict[str, Any] = raw.get("usage") or {}  # type: ignore[assignment]
                 capture = ResponseCapture(
                     text=(response.output_text or "").strip(),
                     response_id=getattr(response, "id", None),

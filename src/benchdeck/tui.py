@@ -157,16 +157,19 @@ class BenchDeckTUI:
             case_id = case.get("id")
             judgment = judgments.get(case_id)
             if judgment:
-                state = judgment.get("overall_rating", "?")
+                agent = judgment.get("agent_label", "")
+                state = f"{judgment.get('overall_rating', '?')}"
+                if agent:
+                    state = f"{state}[{agent}]"
             elif case_id in blocks:
                 state = "BLOCKED"
             else:
                 state = "PENDING"
             marker = ">" if index == self.selected else " "
             title = str(case.get("title", "Untitled"))
-            prefix = f"{marker}{case_id:>2} {state:<10} "
+            prefix = f"{marker}{case_id:>2} "
             available = max(8, width - len(prefix))
-            lines.append(prefix + title[:available])
+            lines.append(prefix + state[:14] + " " + title[:available])
         return lines
 
     def _detail(self, width: int) -> list[str]:
@@ -185,6 +188,8 @@ class BenchDeckTUI:
         ]
         lines += _section("Purpose", str(case.get("purpose", "")), width)
         if judgment:
+            agent = judgment.get("agent_label", "")
+            lines.append(f"Agent: {agent}")
             lines += _section("Rating", str(judgment.get("overall_rating", "")), width)
             lines += _section("Why", str(judgment.get("why", "")), width)
             gate = judgment.get("gate_check") or {}
@@ -215,7 +220,7 @@ class BenchDeckTUI:
     def _cases(self) -> list[dict[str, Any]]:
         return list(self.snapshot.plan.get("cases") or [])
 
-    def _result_for(self, case_id: int) -> dict[str, Any] | None:
+    def _result_for(self, case_id: int | None) -> dict[str, Any] | None:
         for agent_results in self.snapshot.results.values():
             for result in agent_results:
                 if result.get("case_id") == case_id:

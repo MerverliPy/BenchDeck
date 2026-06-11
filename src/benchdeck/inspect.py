@@ -12,9 +12,15 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     tally = snapshot.tally
     warnings: list[str] = []
 
-    planned = int(metadata.get("planned_cases") or tally.get("cases_planned") or 0)
+    planned = int(
+        metadata.get("cases_in_plan")
+        or metadata.get("planned_cases")
+        or tally.get("cases_planned")
+        or 0
+    )
     judged = int(
-        metadata.get("judged_cases")
+        metadata.get("executions_judged")
+        or metadata.get("judged_cases")
         or tally.get("cases_judged")
         or tally.get("cases_completed")
         or 0
@@ -22,17 +28,24 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     if judged < planned:
         warnings.append(f"Only {judged} of {planned} planned cases were judged.")
 
-    for agent, results in snapshot.results.items():
+    for agent_key, results in snapshot.results.items():
         for result in results:
             if not result.get("final_output"):
-                warnings.append(f"{agent} case {result.get('case_id')} has an empty final output.")
+                warnings.append(
+                    f"{agent_key} case {result.get('case_id')} has an empty final output."
+                )
             judge_tx = result.get("judge_transcript")
             final_out = result.get("final_output")
             if judge_tx == final_out and final_out:
                 warnings.append(
-                    f"{agent} case {result.get('case_id')} stores candidate "
+                    f"{agent_key} case {result.get('case_id')} stores candidate "
                     "output as judge_transcript."
                 )
+
+    # Check judgments have agent_label
+    for j in snapshot.judgments:
+        if not j.get("agent_label"):
+            warnings.append(f"Judgment for case {j.get('case_id')} lacks agent_label attribution.")
 
     scale = tally.get("score_scale")
     if not scale:

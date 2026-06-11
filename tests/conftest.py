@@ -1,4 +1,4 @@
-"""Reusable test fixtures and builders for Phase 0 regression tests.
+"""Reusable test fixtures and builders for Phase 1.
 
 Every builder returns canonical Pydantic model instances.  No fixture
 makes a live API call — everything is constructed in-process.
@@ -17,6 +17,7 @@ from benchdeck.models import (
     BenchmarkPlan,
     CaseJudgment,
     CaseRunResult,
+    ExecutionKey,
     GateCheck,
     GateStatus,
     PolicyBlock,
@@ -76,7 +77,7 @@ def make_case(
         purpose=f"Purpose of case {case_id}",
         test_prompt=f"Perform task {case_id}.",
         clarification_expectation=clarify,
-        hard_fail_conditions=hard_fail_conditions or [],
+        hard_fail_conditions=hard_fail_conditions or ["violates safety policy"],
     )
 
 
@@ -84,24 +85,13 @@ def make_case(
 # Plans
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Canonical eight-case single-agent plan covering all required families.
-
 
 def make_single_plan(
     cases: list[BenchmarkCase] | None = None,
     agent_name: str = "TestAgent",
 ) -> BenchmarkPlan:
     if cases is None:
-        cases = [
-            make_case(1, "happy_path"),
-            make_case(2, "happy_path"),
-            make_case(3, "regression_protection"),
-            make_case(4, "regression_protection"),
-            make_case(5, "stress_adversarial"),
-            make_case(6, "stress_adversarial"),
-            make_case(7, "ambiguity"),
-            make_case(8, "ambiguity"),
-        ]
+        cases = _canonical_cases()
     return BenchmarkPlan(
         mode="single",
         profile=make_agent_profile(agent_name),
@@ -114,16 +104,7 @@ def make_comparison_plan(
     cases: list[BenchmarkCase] | None = None,
 ) -> BenchmarkPlan:
     if cases is None:
-        cases = [
-            make_case(1, "happy_path"),
-            make_case(2, "happy_path"),
-            make_case(3, "regression_protection"),
-            make_case(4, "regression_protection"),
-            make_case(5, "stress_adversarial"),
-            make_case(6, "stress_adversarial"),
-            make_case(7, "ambiguity"),
-            make_case(8, "ambiguity"),
-        ]
+        cases = _canonical_cases()
     return BenchmarkPlan(
         mode="comparison",
         profile=make_comparison_agent_profile(),
@@ -133,17 +114,34 @@ def make_comparison_plan(
 
 
 def make_minimal_plan() -> BenchmarkPlan:
-    """Smallest valid plan (one case per required family)."""
+    """Smallest valid plan (one case per required family, 8 cases)."""
     return BenchmarkPlan(
         mode="single",
         profile=make_agent_profile(),
         cases=[
             make_case(1, "happy_path"),
-            make_case(2, "regression_protection"),
-            make_case(3, "stress_adversarial"),
-            make_case(4, "ambiguity"),
+            make_case(2, "happy_path"),
+            make_case(3, "regression_protection"),
+            make_case(4, "regression_protection"),
+            make_case(5, "stress_adversarial"),
+            make_case(6, "stress_adversarial"),
+            make_case(7, "ambiguity"),
+            make_case(8, "ambiguity"),
         ],
     )
+
+
+def _canonical_cases() -> list[BenchmarkCase]:
+    return [
+        make_case(1, "happy_path"),
+        make_case(2, "happy_path"),
+        make_case(3, "regression_protection"),
+        make_case(4, "regression_protection"),
+        make_case(5, "stress_adversarial"),
+        make_case(6, "stress_adversarial"),
+        make_case(7, "ambiguity"),
+        make_case(8, "ambiguity"),
+    ]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -207,6 +205,7 @@ def make_run_result(
 def make_judgment(
     case_id: int,
     *,
+    agent_label: str = "agent_a",
     rating: str = "Strong",
     gate_status: str = "Pass",
     why: str = "Adequate response.",
@@ -225,6 +224,7 @@ def make_judgment(
         }
     return CaseJudgment(
         case_id=case_id,
+        agent_label=agent_label,
         case_verdict="Acceptable" if rating != "Fail" else "Unacceptable",
         gate_check=GateCheck(
             status=GateStatus.PASS if gate_status == "Pass" else GateStatus.FAIL,
@@ -244,7 +244,7 @@ def make_judgment(
 def make_policy_block(
     case_id: int,
     *,
-    agent: str = "agent_a",
+    agent_label: str = "agent_a",
     stage: str = "agent",
     message: str = "Content policy blocked",
 ) -> PolicyBlock:
@@ -252,8 +252,8 @@ def make_policy_block(
         case_id=case_id,
         case_title=f"Case {case_id}",
         stage=stage,
-        agent=agent,
-        operation=f"case {case_id} · {agent}",
+        agent_label=agent_label,
+        operation=f"case {case_id} · {agent_label}",
         message=message,
     )
 
@@ -265,14 +265,15 @@ def make_policy_block(
 
 def make_metadata(
     *,
-    planned_cases: int = 0,
-    judged_cases: int = 0,
+    cases_in_plan: int = 0,
+    executions_judged: int = 0,
     status: RunStatus = RunStatus.RUNNING,
 ) -> RunMetadata:
     return RunMetadata(
         status=status,
-        planned_cases=planned_cases,
-        judged_cases=judged_cases,
+        cases_in_plan=cases_in_plan,
+        executions_planned=cases_in_plan,
+        executions_judged=executions_judged,
         token_usage=TokenUsage(),
     )
 
@@ -287,12 +288,11 @@ def make_single_agent_ledger(
     *,
     agent_label: str = "agent_a",
 ) -> tuple[dict[str, list[CaseRunResult]], list[CaseJudgment]]:
-    """Produce results and judgments for every case in a single-agent plan."""
     results: dict[str, list[CaseRunResult]] = {agent_label: []}
     judgments: list[CaseJudgment] = []
     for case in plan.cases:
         results[agent_label].append(make_run_result(case.id, agent_label=agent_label))
-        judgments.append(make_judgment(case.id))
+        judgments.append(make_judgment(case.id, agent_label=agent_label))
     return results, judgments
 
 
@@ -301,18 +301,32 @@ def make_two_agent_ledger(
 ) -> tuple[dict[str, list[CaseRunResult]], list[CaseJudgment]]:
     """Produce results and judgments for a two-agent plan.
 
-    Both agents receive identical judgments because the *current* code
-    does not attribute judgments to a specific agent.  This builder
-    matches the baseline (buggy) behaviour so that tests can prove the
-    collapse.
+    Each judgment is properly attributed to its agent.
     """
     results: dict[str, list[CaseRunResult]] = {"agent_a": [], "agent_b": []}
     judgments: list[CaseJudgment] = []
     for case in plan.cases:
         results["agent_a"].append(make_run_result(case.id, agent_label="agent_a"))
         results["agent_b"].append(make_run_result(case.id, agent_label="agent_b"))
-        judgments.append(make_judgment(case.id))
+        judgments.append(make_judgment(case.id, agent_label="agent_a"))
+        judgments.append(make_judgment(case.id, agent_label="agent_b"))
     return results, judgments
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Execution keys
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def make_key(case_id: int, agent_label: str = "agent_a") -> ExecutionKey:
+    return ExecutionKey(agent_label=agent_label, case_id=case_id)
+
+
+def make_expected_keys(
+    plan: BenchmarkPlan,
+    agent_labels: list[str] | None = None,
+) -> set[ExecutionKey]:
+    return plan.all_execution_keys(agent_labels or plan.agent_labels)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
