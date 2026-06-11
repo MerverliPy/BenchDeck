@@ -5,7 +5,8 @@ for narrow SSH sessions, including Termius on an iPhone.
 
 It turns one or two Markdown agent files into a benchmark plan, runs isolated cases, handles one concrete
 clarification turn, judges responses, and writes continuously viewable artifacts. The supplied benchmark
-bundle is preserved at `fixtures/original_run.zip` as an immutable regression fixture.
+bundle is preserved losslessly as `fixtures/original_run.zip.b64.*`; BenchDeck exposes those segments
+through the virtual fixture path `fixtures/original_run.zip`.
 
 ## Why this repository exists
 
