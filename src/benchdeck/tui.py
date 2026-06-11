@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import curses
+import io
 import json
 import textwrap
 import time
@@ -228,9 +230,17 @@ def _read_json(path: Path, default: Any) -> Any:
 
 
 def load_snapshot(run_path: Path) -> Snapshot:
-    """Load a run directory or a ZIP archive containing benchmark artifacts."""
-    if run_path.is_file() and run_path.suffix.lower() == ".zip":
-        return _load_zip_snapshot(run_path)
+    """Load a run directory, ZIP archive, or checked-in segmented ZIP fixture."""
+    if run_path.suffix.lower() == ".zip":
+        if run_path.is_file():
+            return _load_zip_snapshot(run_path)
+        segments = sorted(run_path.parent.glob(run_path.name + ".b64.*"))
+        if segments:
+            try:
+                encoded = "".join(part.read_text(encoding="ascii") for part in segments)
+                return _load_zip_bytes(base64.b64decode(encoded, validate=False))
+            except (OSError, ValueError):
+                return Snapshot()
     return Snapshot(
         metadata=_read_json(run_path / "run_metadata.json", {}),
         plan=_read_json(run_path / "benchmark_plan.json", {}),
@@ -242,6 +252,13 @@ def load_snapshot(run_path: Path) -> Snapshot:
 
 
 def _load_zip_snapshot(zip_path: Path) -> Snapshot:
+    try:
+        return _load_zip_bytes(zip_path.read_bytes())
+    except OSError:
+        return Snapshot()
+
+
+def _load_zip_bytes(data: bytes) -> Snapshot:
     defaults: dict[str, Any] = {
         "run_metadata.json": {},
         "benchmark_plan.json": {},
@@ -252,7 +269,7 @@ def _load_zip_snapshot(zip_path: Path) -> Snapshot:
     }
     loaded: dict[str, Any] = {}
     try:
-        with zipfile.ZipFile(zip_path) as archive:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
             members = {Path(name).name: name for name in archive.namelist() if not name.endswith("/")}
             for filename, default in defaults.items():
                 member = members.get(filename)
