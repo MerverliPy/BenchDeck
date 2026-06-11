@@ -36,7 +36,14 @@ benchdeck run \
 Use a frozen plan instead of generating one:
 
 ```bash
-unzip -p fixtures/original_run.zip '*/benchmark_plan.json' > /tmp/benchmark_plan.json
+python - <<'PY'
+import json
+from pathlib import Path
+from benchdeck.tui import load_snapshot
+
+plan = load_snapshot(Path('fixtures/original_run.zip')).plan
+Path('/tmp/benchmark_plan.json').write_text(json.dumps(plan, indent=2) + '\n')
+PY
 benchdeck run \
   --agent-a examples/repository-integrity-agent.md \
   --plan /tmp/benchmark_plan.json \
