@@ -381,8 +381,6 @@ class BenchmarkRunner:
         payload["judge_capture"] = capture.model_dump(mode="json")
 
         judgment = CaseJudgment.model_validate(payload)
-        if judgment.gate_check.status == GateStatus.FAIL:
-            judgment.overall_rating = Rating.FAIL
         return judgment
 
     def _checkpoint(

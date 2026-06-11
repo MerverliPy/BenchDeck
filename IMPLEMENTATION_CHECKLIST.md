@@ -23,7 +23,7 @@
 - [x] Responsive 32-column layout.
 - [x] Number and letter controls suitable for phone keyboards.
 - [x] Live artifact refresh.
-- [x] Overview, case list, case detail, and help screens.
+- [x] Overview, case list, case detail, and help screens. (BUG-1 and BUG-2 resolved — TUI uses correct RunMetadata field names and per-agent judgment lists.)
 - [ ] Launch/pause/cancel subprocess runs from inside the TUI.
 - [x] Export selected case as Markdown.
 
