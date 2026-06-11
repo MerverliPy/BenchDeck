@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from typing import Iterable
+from collections.abc import Iterable
 
 from .models import BenchmarkCase, CaseJudgment, Family, Rating
 

@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           cat fixtures/original_run.zip.b64.* | base64 --decode > fixtures/original_run.zip
-          echo "20cb88ddde4bc5005adf5eeb501dd1c9bfc8ed971ed82668ecfe8162d9d22444  fixtures/original_run.zip" | sha256sum --check --strict
+          echo "608751f61573c0799c65d92b61a8000be8484001b20d63315f97df4bb3b2fd3c  fixtures/original_run.zip" | sha256sum --check --strict
           python -m zipfile -t fixtures/original_run.zip
           rm fixtures/original_run.zip.b64.*
       - name: Commit materialized fixture

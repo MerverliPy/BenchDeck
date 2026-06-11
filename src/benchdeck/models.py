@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -14,7 +14,7 @@ class Family(StrEnum):
     AMBIGUITY = "ambiguity"
 
     @classmethod
-    def normalize(cls, value: str) -> "Family":
+    def normalize(cls, value: str) -> Family:
         aliases = {
             "happy-path": cls.HAPPY_PATH,
             "happy_path": cls.HAPPY_PATH,
@@ -172,7 +172,7 @@ class TokenUsage(BaseModel):
 
 
 class RunMetadata(BaseModel):
-    started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     completed_at: str | None = None
     status: RunStatus = RunStatus.RUNNING
     stop_reason: str | None = None
