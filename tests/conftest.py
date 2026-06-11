@@ -23,6 +23,8 @@ from benchdeck.models import (
     PolicyBlock,
     Rating,
     ResponseCapture,
+    Rubric,
+    RubricDimension,
     RunMetadata,
     RunStatus,
     TokenUsage,
@@ -209,10 +211,10 @@ def make_judgment(
     rating: str = "Strong",
     gate_status: str = "Pass",
     why: str = "Adequate response.",
-    rubric: dict[str, str] | None = None,
+    rubric_dimensions: dict[str, str] | None = None,
 ) -> CaseJudgment:
-    if rubric is None:
-        rubric = {
+    if rubric_dimensions is None:
+        rubric_dimensions = {
             "mission_fidelity": rating,
             "task_success": rating,
             "priority_adherence": rating,
@@ -222,6 +224,16 @@ def make_judgment(
             "robustness": rating,
             "regression_safety": rating,
         }
+    rubric = Rubric(
+        dimensions=[
+            RubricDimension(
+                dimension=dim,
+                rating=Rating(rat),
+                evidence=f"Evidence for {dim}",
+            )
+            for dim, rat in rubric_dimensions.items()
+        ]
+    )
     return CaseJudgment(
         case_id=case_id,
         agent_label=agent_label,
@@ -230,7 +242,7 @@ def make_judgment(
             status=GateStatus.PASS if gate_status == "Pass" else GateStatus.FAIL,
             reason="OK" if gate_status == "Pass" else "Hard-fail triggered",
         ),
-        rubric={k: Rating(v) for k, v in rubric.items()},
+        rubric=rubric,
         overall_rating=Rating(rating),
         why=why,
     )

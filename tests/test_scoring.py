@@ -26,7 +26,21 @@ def _judgment(case_id: int, rating: str, agent_label: str = "agent_a") -> CaseJu
             "agent_label": agent_label,
             "case_verdict": "ok",
             "gate_check": {"status": "Pass", "reason": "ok"},
-            "rubric": {"task_success": rating},
+            "rubric": {
+                "dimensions": [
+                    {"dimension": d, "rating": rating}
+                    for d in [
+                        "mission_fidelity",
+                        "task_success",
+                        "priority_adherence",
+                        "ambiguity_handling",
+                        "process_discipline",
+                        "tool_discipline",
+                        "robustness",
+                        "regression_safety",
+                    ]
+                ]
+            },
             "overall_rating": rating,
             "why": "ok",
         }
@@ -69,7 +83,21 @@ def test_tally_counts_gate_failures() -> None:
             "agent_label": "agent_a",
             "case_verdict": "bad",
             "gate_check": {"status": "Fail", "reason": "hard-fail"},
-            "rubric": {"task_success": "Weak"},
+            "rubric": {
+                "dimensions": [
+                    {"dimension": d, "rating": "Weak"}
+                    for d in [
+                        "mission_fidelity",
+                        "task_success",
+                        "priority_adherence",
+                        "ambiguity_handling",
+                        "process_discipline",
+                        "tool_discipline",
+                        "robustness",
+                        "regression_safety",
+                    ]
+                ]
+            },
             "overall_rating": "Fail",
             "why": "failed gate",
         }

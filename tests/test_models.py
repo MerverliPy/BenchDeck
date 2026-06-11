@@ -367,7 +367,21 @@ class TestJudgmentIdentity:
                 "agent_label": "agent_a",
                 "case_verdict": "ok",
                 "gate_check": {"status": "Pass", "reason": "ok"},
-                "rubric": {"task_success": "Strong"},
+                "rubric": {
+                    "dimensions": [
+                        {"dimension": d, "rating": "Strong"}
+                        for d in [
+                            "mission_fidelity",
+                            "task_success",
+                            "priority_adherence",
+                            "ambiguity_handling",
+                            "process_discipline",
+                            "tool_discipline",
+                            "robustness",
+                            "regression_safety",
+                        ]
+                    ]
+                },
                 "overall_rating": "Strong",
                 "why": "ok",
             }

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+T = TypeVar("T")
 
 
 class Family(StrEnum):
@@ -84,6 +86,13 @@ class Stage(StrEnum):
     JUDGE = "judge"
 
 
+class ClarificationState(StrEnum):
+    FINAL_ANSWER = "final_answer"
+    CLARIFICATION_REQUEST = "clarification_request"
+    REFUSAL = "refusal"
+    ERROR = "error"
+
+
 # ── canonical execution identity ──────────────────────────────────────────
 
 
@@ -151,6 +160,9 @@ class BenchmarkPlan(BaseModel):
     profile: AgentProfile
     validation_standard: list[str] = Field(default_factory=list)
     cases: list[BenchmarkCase]
+    schema_version: str = "2.0"
+    prompt_version: str = "1"
+    provenance: PlanProvenance | None = None
 
     @model_validator(mode="after")
     def _validate_plan(self) -> BenchmarkPlan:
@@ -197,6 +209,16 @@ class BenchmarkPlan(BaseModel):
         if not any(case.hard_fail_conditions for case in self.cases):
             raise ValueError("Plan must have at least one hard-fail condition across all cases")
 
+        # ── required-clarification cases must have an answer key ──
+        for case in self.cases:
+            if (
+                case.clarification_expectation == ClarificationExpectation.REQUIRED.value
+                and not case.clarification_answer_key
+            ):
+                raise ValueError(
+                    f"Case {case.id} requires clarification but has no clarification_answer_key"
+                )
+
         return self
 
     @property
@@ -228,6 +250,155 @@ class ResponseCapture(BaseModel):
     attempts: int = 1
 
 
+# ── Phase 2 gateway models ────────────────────────────────────────────────
+
+
+class ErrorCategory(StrEnum):
+    POLICY = "policy"
+    REFUSAL = "refusal"
+    TIMEOUT = "timeout"
+    RATE_LIMIT = "rate_limit"
+    TRANSPORT = "transport"
+    PROVIDER = "provider"
+    PARSE = "parse"
+    VALIDATION = "validation"
+    UNKNOWN = "unknown"
+
+
+class UsageDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cached_input_tokens: int = 0
+    reasoning_tokens: int = 0
+    provider_extensions: dict[str, Any] = Field(default_factory=dict)
+
+
+class ErrorRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: ErrorCategory
+    message: str
+    http_status: int | None = None
+    provider_type: str | None = None
+    provider_code: str | None = None
+    request_id: str | None = None
+    retryable: bool = False
+    raw_error: dict[str, Any] | None = None
+
+    @classmethod
+    def from_provider_error(
+        cls,
+        *,
+        exc_type: str,
+        status_code: int | None,
+        message: str,
+        body: dict[str, Any] | None,
+        request_id: str | None = None,
+    ) -> ErrorRecord:
+        category = cls._classify(status_code, body)
+        provider_code = cls._extract_code(body)
+        provider_type = body.get("type") if isinstance(body, dict) else None
+        retryable_cats = {ErrorCategory.TIMEOUT, ErrorCategory.RATE_LIMIT, ErrorCategory.TRANSPORT}
+        retryable = category in retryable_cats
+        return cls(
+            category=category,
+            message=message,
+            http_status=status_code,
+            provider_type=provider_type,
+            provider_code=provider_code,
+            request_id=request_id,
+            retryable=retryable,
+            raw_error={
+                "type": exc_type,
+                "status_code": status_code,
+                "message": message,
+                "request_id": request_id,
+                "body": body,
+            },
+        )
+
+    @classmethod
+    def _classify(cls, status_code: int | None, body: dict[str, Any] | None) -> ErrorCategory:
+        if status_code == 408 or status_code == 504:
+            return ErrorCategory.TIMEOUT
+        if status_code == 429:
+            return ErrorCategory.RATE_LIMIT
+        code = cls._extract_code(body)
+        if code in {"cyber_policy", "content_policy", "policy_violation"}:
+            return ErrorCategory.POLICY
+        if status_code is not None and 500 <= status_code < 600:
+            return ErrorCategory.PROVIDER
+        if status_code is not None and 400 <= status_code < 500:
+            return ErrorCategory.PROVIDER
+        return ErrorCategory.UNKNOWN
+
+    @staticmethod
+    def _extract_code(body: dict[str, Any] | None) -> str | None:
+        if not isinstance(body, dict):
+            return None
+        code = body.get("code")
+        if code is not None:
+            return str(code)
+        nested = body.get("error")
+        if isinstance(nested, dict):
+            return ErrorRecord._extract_code(nested)
+        return None
+
+
+class ResponseAttempt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attempt_number: int
+    started_at: str = ""
+    completed_at: str = ""
+    response_id: str | None = None
+    request_id: str | None = None
+    provider_status: str | None = None
+    finish_reason: str | None = None
+    output_text: str = ""
+    refusal: str | None = None
+    usage: UsageDetails = Field(default_factory=UsageDetails)
+    error: ErrorRecord | None = None
+    raw_response: dict[str, Any] | None = None
+
+
+class GenerationResult(BaseModel, Generic[T]):
+    model_config = ConfigDict(extra="forbid")
+
+    value: T | None = None
+    attempts: list[ResponseAttempt] = Field(default_factory=list)
+    terminal_error: ErrorRecord | None = None
+    parse_error: str | None = None
+    validation_error: str | None = None
+    logical_calls: int = 1
+    total_http_attempts: int = 0
+
+    @property
+    def succeeded(self) -> bool:
+        return self.value is not None and self.terminal_error is None
+
+    @property
+    def last_attempt(self) -> ResponseAttempt | None:
+        return self.attempts[-1] if self.attempts else None
+
+    @property
+    def total_input_tokens(self) -> int:
+        return sum(a.usage.input_tokens for a in self.attempts)
+
+    @property
+    def total_output_tokens(self) -> int:
+        return sum(a.usage.output_tokens for a in self.attempts)
+
+    @property
+    def has_refusal(self) -> bool:
+        return any(
+            att.refusal is not None or att.finish_reason == "refusal" for att in self.attempts
+        )
+
+
 # ── case run result ───────────────────────────────────────────────────────
 
 
@@ -247,6 +418,93 @@ class CaseRunResult(BaseModel):
         return ExecutionKey(agent_label=self.agent_label, case_id=self.case_id)
 
 
+# ── typed rubric ───────────────────────────────────────────────────────────
+
+REQUIRED_RUBRIC_DIMENSIONS = (
+    "mission_fidelity",
+    "task_success",
+    "priority_adherence",
+    "ambiguity_handling",
+    "process_discipline",
+    "tool_discipline",
+    "robustness",
+    "regression_safety",
+)
+
+
+class RubricDimension(BaseModel):
+    """One scored dimension with evidence/reasons, not just a rating."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dimension: str
+    rating: Rating
+    evidence: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+
+
+class Rubric(BaseModel):
+    """Typed rubric containing all required dimensions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dimensions: list[RubricDimension] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_required_dimensions(self) -> Rubric:
+        present = {d.dimension for d in self.dimensions}
+        missing = set(REQUIRED_RUBRIC_DIMENSIONS) - present
+        if missing:
+            raise ValueError(f"Rubric missing required dimensions: {', '.join(sorted(missing))}")
+        unknown = present - set(REQUIRED_RUBRIC_DIMENSIONS)
+        if unknown:
+            raise ValueError(f"Rubric contains unknown dimensions: {', '.join(sorted(unknown))}")
+        return self
+
+    def overall_rating(self) -> Rating:
+        """Deterministic Python-level rating from dimensions.
+
+        Policy (version 1): minimum dimension rating, with gate-fail override
+        applied by the caller.
+        """
+        if not self.dimensions:
+            return Rating.FAIL
+        scores = [d.rating.score for d in self.dimensions]
+        min_score = min(scores)
+        avg_score = sum(scores) / len(scores)
+        if min_score <= 1:
+            return Rating.FAIL
+        if avg_score >= 3.5 and min_score >= 3:
+            return Rating.EXCELLENT
+        if avg_score >= 2.5 and min_score >= 2:
+            return Rating.STRONG
+        if avg_score >= 1.5:
+            return Rating.ACCEPTABLE
+        return Rating.WEAK
+
+    def as_dict(self) -> dict[str, Rating]:
+        return {d.dimension: d.rating for d in self.dimensions}
+
+
+# ── plan provenance ────────────────────────────────────────────────────────
+
+
+class PlanProvenance(BaseModel):
+    """Records how a plan was produced and its content integrity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["generated", "frozen"] = "generated"
+    source_file: str | None = None
+    source_sha256: str | None = None
+    planner_model: str | None = None
+    prompt_version: str = "1"
+    schema_version: str = "1"
+    plan_sha256: str = ""
+    generated_at: str = ""
+
+
 # ── gate check & case judgment ────────────────────────────────────────────
 
 
@@ -260,11 +518,17 @@ class CaseJudgment(BaseModel):
     agent_label: str
     case_verdict: str
     gate_check: GateCheck
-    rubric: dict[str, Rating]
+    rubric: Rubric
     overall_rating: Rating
     why: str
     regression_notes: list[str] = Field(default_factory=list)
     judge_capture: ResponseCapture | None = None
+
+    @model_validator(mode="after")
+    def _gate_fail_forces_fail(self) -> CaseJudgment:
+        if self.gate_check.status == GateStatus.FAIL and self.overall_rating != Rating.FAIL:
+            object.__setattr__(self, "overall_rating", Rating.FAIL)
+        return self
 
     @property
     def execution_key(self) -> ExecutionKey:
