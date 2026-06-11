@@ -162,6 +162,8 @@ class BenchDeckTUI:
         blocks = {b.get("case_id"): b for b in self.snapshot.policy_blocks}
         for index, case in enumerate(self._cases()):
             case_id = case.get("id")
+            if not isinstance(case_id, int):
+                continue
             case_judgments = judgments_by_case.get(case_id)
             if case_judgments:
                 parts = []

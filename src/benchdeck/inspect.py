@@ -14,7 +14,10 @@ _SCHEMA_DIR = Path(__file__).parents[2] / "schemas"
 def _load_schema(name: str) -> dict[str, Any] | None:
     path = _SCHEMA_DIR / name
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        result: Any = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(result, dict):
+            return None
+        return result
     except (FileNotFoundError, json.JSONDecodeError):
         return None
 
