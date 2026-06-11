@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import curses
+import datetime
 import io
 import json
 import textwrap
@@ -82,6 +83,8 @@ class BenchDeckTUI:
         elif key == ord("r"):
             self.snapshot = load_snapshot(self.run_dir)
             self.last_load = time.monotonic()
+        elif key == ord("e") and self.tab == 1:
+            self._export_case()
 
     def _draw(self, stdscr: Any) -> None:
         stdscr.erase()
@@ -102,7 +105,7 @@ class BenchDeckTUI:
         viewport = lines[self.scroll : self.scroll + height - 4]
         for row, line in enumerate(viewport, start=2):
             self._safe_add(stdscr, row, 0, line, width)
-        footer = "h/l tabs  j/k move  Enter detail  r refresh  q quit"
+        footer = "h/l tabs  j/k move  Enter detail  e export  r reload  q quit"
         self._safe_add(stdscr, height - 1, 0, footer, width, curses.A_REVERSE)
         stdscr.refresh()
 
@@ -117,12 +120,12 @@ class BenchDeckTUI:
 
     def _overview(self, width: int) -> list[str]:
         m, t = self.snapshot.metadata, self.snapshot.tally
-        planned = int(m.get("planned_cases") or t.get("cases_planned") or 0)
-        judged = int(
-            m.get("judged_cases") or t.get("cases_judged") or t.get("cases_completed") or 0
+        planned = int(m.get("cases_in_plan") or _sum_tally_int(t, "cases_planned") or 0)
+        judged = int(m.get("executions_judged") or _sum_tally_int(t, "cases_judged") or 0)
+        blocks = int(m.get("policy_blocks") or _sum_tally_int(t, "policy_blocks") or 0)
+        infra = int(
+            m.get("infrastructure_failures") or _sum_tally_int(t, "infrastructure_failures") or 0
         )
-        blocks = int(m.get("policy_blocks") or t.get("policy_blocks") or 0)
-        infra = int(m.get("infrastructure_failures") or t.get("infrastructure_failures") or 0)
         ratio = judged / planned if planned else 0.0
         bar_width = max(8, min(30, width - 16))
         filled = int(bar_width * ratio)
@@ -151,16 +154,22 @@ class BenchDeckTUI:
 
     def _case_list(self, width: int) -> list[str]:
         lines = ["Cases"]
-        judgments = {j.get("case_id"): j for j in self.snapshot.judgments}
+        judgments_by_case: dict[int, list[dict[str, Any]]] = {}
+        for j in self.snapshot.judgments:
+            cid = j.get("case_id")
+            if cid is not None:
+                judgments_by_case.setdefault(cid, []).append(j)
         blocks = {b.get("case_id"): b for b in self.snapshot.policy_blocks}
         for index, case in enumerate(self._cases()):
             case_id = case.get("id")
-            judgment = judgments.get(case_id)
-            if judgment:
-                agent = judgment.get("agent_label", "")
-                state = f"{judgment.get('overall_rating', '?')}"
-                if agent:
-                    state = f"{state}[{agent}]"
+            case_judgments = judgments_by_case.get(case_id)
+            if case_judgments:
+                parts = []
+                for jj in case_judgments:
+                    agent = jj.get("agent_label", "")
+                    rating = jj.get("overall_rating", "?")
+                    parts.append(f"{rating}[{agent}]")
+                state = " ".join(parts)
             elif case_id in blocks:
                 state = "BLOCKED"
             else:
@@ -168,8 +177,8 @@ class BenchDeckTUI:
             marker = ">" if index == self.selected else " "
             title = str(case.get("title", "Untitled"))
             prefix = f"{marker}{case_id:>2} "
-            available = max(8, width - len(prefix))
-            lines.append(prefix + state[:14] + " " + title[:available])
+            available = max(8, width - len(prefix) - len(state) - 1)
+            lines.append(prefix + state + " " + title[:available])
         return lines
 
     def _detail(self, width: int) -> list[str]:
@@ -179,27 +188,32 @@ class BenchDeckTUI:
         self.selected = min(self.selected, len(cases) - 1)
         case = cases[self.selected]
         case_id = case.get("id")
-        judgment = next((j for j in self.snapshot.judgments if j.get("case_id") == case_id), None)
-        result = self._result_for(case_id)
+        case_judgments = [j for j in self.snapshot.judgments if j.get("case_id") == case_id]
         lines = [
             f"Case {case_id}: {case.get('title', '')}",
             f"Family: {case.get('family', '')}",
             "",
         ]
         lines += _section("Purpose", str(case.get("purpose", "")), width)
-        if judgment:
-            agent = judgment.get("agent_label", "")
-            lines.append(f"Agent: {agent}")
-            lines += _section("Rating", str(judgment.get("overall_rating", "")), width)
-            lines += _section("Why", str(judgment.get("why", "")), width)
-            gate = judgment.get("gate_check") or {}
-            lines += _section("Gate", f"{gate.get('status')}: {gate.get('reason', '')}", width)
-        elif result and result.get("infrastructure_error"):
-            lines += ["Infrastructure error: empty output after retries"]
+        if case_judgments:
+            for j_idx, judgment in enumerate(case_judgments):
+                if j_idx > 0:
+                    lines.append("---")
+                agent = judgment.get("agent_label", "")
+                lines.append(f"Agent: {agent}")
+                lines += _section("Rating", str(judgment.get("overall_rating", "")), width)
+                lines += _section("Why", str(judgment.get("why", "")), width)
+                gate = judgment.get("gate_check") or {}
+                lines += _section("Gate", f"{gate.get('status')}: {gate.get('reason', '')}", width)
+                result = self._result_for(case_id, agent)
+                if result:
+                    lines += _section("Agent output", str(result.get("final_output", "")), width)
+        elif self._result_for(case_id):
+            result = self._result_for(case_id)
+            if result and result.get("infrastructure_error"):
+                lines += ["Infrastructure error: empty output after retries"]
         else:
             lines += ["No judgment yet."]
-        if result:
-            lines += _section("Agent output", str(result.get("final_output", "")), width)
         return lines
 
     def _help(self, width: int) -> list[str]:
@@ -210,6 +224,7 @@ class BenchDeckTUI:
             "h / l    previous / next screen",
             "j / k    move selection or scroll",
             "Enter    open selected case",
+            "e        export case as Markdown",
             "r        reload artifacts",
             "q / Esc  quit",
             "",
@@ -220,12 +235,68 @@ class BenchDeckTUI:
     def _cases(self) -> list[dict[str, Any]]:
         return list(self.snapshot.plan.get("cases") or [])
 
-    def _result_for(self, case_id: int | None) -> dict[str, Any] | None:
-        for agent_results in self.snapshot.results.values():
+    def _result_for(
+        self, case_id: int | None, agent_label: str | None = None
+    ) -> dict[str, Any] | None:
+        for agent_label_key, agent_results in self.snapshot.results.items():
+            if agent_label is not None and agent_label_key != agent_label:
+                continue
             for result in agent_results:
                 if result.get("case_id") == case_id:
                     return result
         return None
+
+    def _export_case(self) -> None:
+        cases = self._cases()
+        if not cases:
+            return
+        self.selected = min(self.selected, len(cases) - 1)
+        case = cases[self.selected]
+        case_id = case.get("id", "unknown")
+        case_judgments = [j for j in self.snapshot.judgments if j.get("case_id") == case_id]
+        ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+        filename = f"case_{case_id}_{ts}.md"
+        lines = [
+            f"# Case {case_id}: {case.get('title', 'Untitled')}",
+            "",
+            f"**Family:** {case.get('family', '')}",
+            f"**Exported:** {ts}",
+            "",
+            "## Purpose",
+            "",
+            str(case.get("purpose", "")),
+            "",
+            "## Test Prompt",
+            "",
+            "```",
+            str(case.get("test_prompt", "")),
+            "```",
+            "",
+            "## Judgments",
+            "",
+        ]
+        if case_judgments:
+            for judgment in case_judgments:
+                agent = judgment.get("agent_label", "unknown")
+                lines.append(f"### Agent: {agent}")
+                lines.append(f"**Rating:** {judgment.get('overall_rating', '?')}")
+                gate = judgment.get("gate_check") or {}
+                lines.append(f"**Gate:** {gate.get('status', '?')} — {gate.get('reason', '')}")
+                lines.append(f"**Why:** {judgment.get('why', '')}")
+                lines.append("")
+        else:
+            lines.append("*No judgments yet.*")
+            lines.append("")
+        result = self._result_for(case_id)
+        if result:
+            lines.append("## Agent Output")
+            lines.append("")
+            lines.append("```")
+            lines.append(str(result.get("final_output", "")))
+            lines.append("```")
+            lines.append("")
+        with contextlib.suppress(OSError):
+            Path(filename).write_text("\n".join(lines), encoding="utf-8")
 
     @staticmethod
     def _safe_add(stdscr: Any, row: int, col: int, text: str, width: int, attr: int = 0) -> None:
@@ -284,12 +355,18 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
             members = {
                 Path(name).name: name for name in archive.namelist() if not name.endswith("/")
             }
+            if len(members) > 1000:
+                return Snapshot()
             for filename, default in defaults.items():
                 member = members.get(filename)
                 if member is None:
                     loaded[filename] = default
                     continue
                 try:
+                    info = archive.getinfo(member)
+                    if info.file_size > 256 * 1024 * 1024:
+                        loaded[filename] = default
+                        continue
                     loaded[filename] = json.loads(archive.read(member).decode("utf-8"))
                 except (KeyError, UnicodeDecodeError, json.JSONDecodeError):
                     loaded[filename] = default
@@ -307,6 +384,14 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
 
 def _wrap(text: str, width: int) -> list[str]:
     return textwrap.wrap(text, width=max(12, width - 1), replace_whitespace=False) or [""]
+
+
+def _sum_tally_int(tally: dict[str, Any], key: str) -> int:
+    total = 0
+    for agent_tally in tally.values():
+        if isinstance(agent_tally, dict):
+            total += int(agent_tally.get(key, 0) or 0)
+    return total
 
 
 def _section(title: str, text: str, width: int) -> list[str]:

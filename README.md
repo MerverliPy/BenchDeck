@@ -5,8 +5,7 @@ for narrow SSH sessions, including Termius on an iPhone.
 
 It turns one or two Markdown agent files into a benchmark plan, runs isolated cases, handles one concrete
 clarification turn, judges responses, and writes continuously viewable artifacts. The supplied benchmark
-bundle is preserved losslessly as `fixtures/original_run.zip.b64.*`; BenchDeck exposes those segments
-through the virtual fixture path `fixtures/original_run.zip`.
+bundle is preserved as `fixtures/original_run.zip`.
 
 ## Why this repository exists
 
@@ -24,17 +23,23 @@ pip install -e '.[dev]'
 export OPENAI_API_KEY='...'
 ```
 
+BenchDeck checks that `OPENAI_API_KEY` is set before starting a run and exits with a clear error if
+it is missing.
+
 ## Run a benchmark
 
 ```bash
 benchdeck run \
   --agent-a examples/repository-integrity-agent.md \
-  --model gpt-5.5 \
-  --judge-model gpt-5.5 \
+  --model gpt-4o-mini \
+  --judge-model gpt-4o-mini \
   --output-dir benchmark_out
 ```
 
-Use a frozen plan instead of generating one:
+The `--model` and `--judge-model` default to `gpt-4o-mini`. Specify any model your API key grants
+access to.
+
+Use a frozen plan instead of generating one (tip: `Snapshot.plan` is a plain `dict`, not a Pydantic model):
 
 ```bash
 python - <<'PY'
@@ -48,6 +53,15 @@ PY
 benchdeck run \
   --agent-a examples/repository-integrity-agent.md \
   --plan /tmp/benchmark_plan.json \
+  --output-dir benchmark_out
+```
+
+Comparison mode (two agents, same cases):
+
+```bash
+benchdeck run \
+  --agent-a examples/agent_a.md \
+  --agent-b examples/agent_b.md \
   --output-dir benchmark_out
 ```
 
@@ -65,7 +79,8 @@ Open the supplied run immediately:
 benchdeck tui fixtures/original_run.zip
 ```
 
-Controls: `1-4` screens, `h/l` tabs, `j/k` move or scroll, Enter details, `r` reload, `q` quit.
+Controls: `1-4` screens, `h/l` tabs, `j/k` move or scroll, `Enter` details, `e` export case as
+Markdown, `r` reload, `q` quit.
 
 ## Inspect existing artifacts
 
@@ -73,8 +88,9 @@ Controls: `1-4` screens, `h/l` tabs, `j/k` move or scroll, Enter details, `r` re
 benchdeck inspect fixtures/original_run.zip
 ```
 
-The command detects incomplete coverage, empty outputs, duplicated judge transcripts, undeclared scoring
-scales, and misleading run status.
+The command detects incomplete coverage, empty outputs, duplicated judge transcripts, undeclared
+scoring scales, misleading run status, and validates per-agent tallies against the JSON Schema at
+`schemas/summary_tally.schema.json`.
 
 ## Artifact semantics
 
@@ -83,12 +99,27 @@ scales, and misleading run status.
 - The rating scale is fixed at 0-4.
 - Candidate output and judge output are stored separately.
 - JSON files are atomically replaced so a watching TUI never reads a half-written checkpoint.
-- `completed` means all required cases were judged; otherwise the run is `inconclusive` or failed.
+- `completed` means all required cases were judged; otherwise the run is `inconclusive`, `completed_with_failures`,
+  `infrastructure_failed`, or `aborted`.
+
+## Limitations
+
+- **No multi-judge aggregation.** Each case is judged once per agent; there is no ensemble or
+  disagreement reporting yet.
+- **No budget cap.** No token or cost limit guards the run. A misconfigured run can generate
+  significant API spend.
+- **No signed releases or SBOM.** Distribution artifacts have not been published.
+- **The TUI cannot launch or cancel runs.** It is read-only; runs are started from the CLI.
+- **Comparison mode in the TUI is partial.** The case list and detail screens show per-agent
+  judgments, but selection/filtering by agent is not yet implemented.
+- **No Windows testing.** The harness and TUI are developed and tested on Linux and macOS.
 
 ## Development
 
 ```bash
 ruff check .
+ruff format --check .
+mypy src/benchdeck/ --ignore-missing-imports
 pytest
 ```
 

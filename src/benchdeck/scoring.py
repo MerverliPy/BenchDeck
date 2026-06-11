@@ -15,8 +15,6 @@ from .models import (
     Rating,
 )
 
-REQUIRED_FAMILIES = Family.required_families()
-
 
 def build_tally(
     cases: Iterable[BenchmarkCase],

@@ -22,13 +22,9 @@ from benchdeck.tui import (
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_result_for_pairing_returns_first_match_regardless_of_agent() -> None:
-    """_result_for iterates results by agent and returns the first case_id match.
+def test_result_for_respects_agent_label_when_provided() -> None:
+    """_result_for with agent_label returns only the matching agent's result."""
 
-    When two agents have a result for the same case_id, the method cannot
-    distinguish which agent the result belongs to — it always returns the
-    first match found.
-    """
     from benchdeck.tui import BenchDeckTUI
 
     tui = BenchDeckTUI(Path("/tmp/nonexistent_tui"))
@@ -42,12 +38,17 @@ def test_result_for_pairing_returns_first_match_regardless_of_agent() -> None:
             ],
         }
     )
-    result = tui._result_for(1)
-    # dict ordering: agent_a comes first, so its result is always returned.
-    assert result is not None
-    assert result["final_output"] == "from agent A", (
-        "_result_for returns first match, ignoring agent attribution"
-    )
+    result_a = tui._result_for(1, agent_label="agent_a")
+    assert result_a is not None
+    assert result_a["final_output"] == "from agent A"
+
+    result_b = tui._result_for(1, agent_label="agent_b")
+    assert result_b is not None
+    assert result_b["final_output"] == "from agent B"
+
+    # Without agent_label, returns first match (by dict insertion order)
+    result_any = tui._result_for(1)
+    assert result_any is not None
 
 
 def test_tui_snapshot_case_plan_has_no_agent_label() -> None:

@@ -14,7 +14,6 @@ Synthetic security examples must use obvious placeholders, never realistic crede
 """
 
 PLANNER_SCHEMA_VERSION = "2"
-JUDGE_PROMPT_VERSION = "2"
 
 
 def planner_input(agent_a: str, agent_b: str | None) -> str:

@@ -16,7 +16,7 @@
 - [x] Support one concrete simulated clarification reply.
 - [x] Include a frozen-plan execution path.
 - [ ] Add multi-judge aggregation and disagreement reporting.
-- [ ] Add deterministic JSON Schema validation of agent final manifests.
+- [x] Add deterministic JSON Schema validation of agent final manifests.
 
 ## P2 — TUI
 
@@ -25,7 +25,7 @@
 - [x] Live artifact refresh.
 - [x] Overview, case list, case detail, and help screens.
 - [ ] Launch/pause/cancel subprocess runs from inside the TUI.
-- [ ] Export selected case as Markdown.
+- [x] Export selected case as Markdown.
 
 ## P3 — Distribution
 

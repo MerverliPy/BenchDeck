@@ -69,28 +69,10 @@ class RunStatus(StrEnum):
     ABORTED = "aborted"
 
 
-class BenchmarkMode(StrEnum):
-    SINGLE = "single"
-    COMPARISON = "comparison"
-
-
 class ClarificationExpectation(StrEnum):
     REQUIRED = "required"
     OPTIONAL = "optional"
     UNDESIRABLE = "undesirable"
-
-
-class Stage(StrEnum):
-    PLANNER = "planner"
-    AGENT = "agent"
-    JUDGE = "judge"
-
-
-class ClarificationState(StrEnum):
-    FINAL_ANSWER = "final_answer"
-    CLARIFICATION_REQUEST = "clarification_request"
-    REFUSAL = "refusal"
-    ERROR = "error"
 
 
 # ── canonical execution identity ──────────────────────────────────────────
@@ -161,7 +143,7 @@ class BenchmarkPlan(BaseModel):
     validation_standard: list[str] = Field(default_factory=list)
     cases: list[BenchmarkCase]
     schema_version: str = "2.0"
-    prompt_version: str = "1"
+    prompt_version: str = "2"
     provenance: PlanProvenance | None = None
 
     @model_validator(mode="after")
@@ -301,7 +283,12 @@ class ErrorRecord(BaseModel):
         category = cls._classify(status_code, body)
         provider_code = cls._extract_code(body)
         provider_type = body.get("type") if isinstance(body, dict) else None
-        retryable_cats = {ErrorCategory.TIMEOUT, ErrorCategory.RATE_LIMIT, ErrorCategory.TRANSPORT}
+        retryable_cats = {
+            ErrorCategory.TIMEOUT,
+            ErrorCategory.RATE_LIMIT,
+            ErrorCategory.TRANSPORT,
+            ErrorCategory.PROVIDER,
+        }
         retryable = category in retryable_cats
         return cls(
             category=category,
@@ -499,7 +486,7 @@ class PlanProvenance(BaseModel):
     source_file: str | None = None
     source_sha256: str | None = None
     planner_model: str | None = None
-    prompt_version: str = "1"
+    prompt_version: str = "2"
     schema_version: str = "1"
     plan_sha256: str = ""
     generated_at: str = ""
@@ -699,4 +686,4 @@ class BenchmarkRunVerdict(BaseModel):
 
 
 def _new_run_id() -> str:
-    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
