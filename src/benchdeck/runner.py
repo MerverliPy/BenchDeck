@@ -60,8 +60,6 @@ class BenchmarkRunner:
         self.output_dir = output_dir
         self.plan_path = plan_path
         self._planner_gateway = planner_gateway
-        self._external_agent_gateway = agent_gateway
-        self._external_judge_gateway = judge_gateway
         self.agent_gateway = agent_gateway or OpenAIGateway(GatewayConfig(model=model))
         self.judge_gateway = judge_gateway or OpenAIGateway(GatewayConfig(model=judge_model))
         self.store = ArtifactStore(output_dir)

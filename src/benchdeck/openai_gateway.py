@@ -190,13 +190,6 @@ class OpenAIGateway:
     def generate(self, *, instructions: str, input_text: str) -> GenerationResult[str]:
         return self._call_text(instructions=instructions, input_text=input_text)
 
-    def generate_structured(
-        self, *, instructions: str, input_text: str, schema: dict[str, Any]
-    ) -> GenerationResult[dict[str, Any]]:
-        return self._call_structured(
-            instructions=instructions, input_text=input_text, schema=schema
-        )
-
     def generate_json(
         self, *, instructions: str, input_text: str
     ) -> GenerationResult[dict[str, Any]]:
@@ -249,29 +242,6 @@ class OpenAIGateway:
             make_call=_make_call,
             extract_text=_extract_output_text,
             extract_raw=_to_dict,
-        )
-
-    def _call_structured(
-        self, *, instructions: str, input_text: str, schema: dict[str, Any]
-    ) -> GenerationResult[dict[str, Any]]:
-        kwargs = self._build_kwargs(instructions=instructions, input_text=input_text)
-        kwargs["text"] = {
-            "format": {
-                "type": "json_schema",
-                "name": "response",
-                "schema": schema,
-                "strict": True,
-            }
-        }
-
-        def _make_call() -> Any:
-            return self.client.responses.create(**kwargs)
-
-        return self._execute(
-            make_call=_make_call,
-            extract_text=_extract_output_text,
-            extract_raw=_to_dict,
-            post_process=_parse_json_object,
         )
 
     def _execute(

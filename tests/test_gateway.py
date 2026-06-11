@@ -113,7 +113,7 @@ class TestErrorRecordClassification:
             body=None,
         )
         assert err.category == ErrorCategory.PROVIDER
-        assert err.retryable is False
+        assert err.retryable is True
 
     def test_504_is_timeout(self) -> None:
         err = ErrorRecord.from_provider_error(
@@ -145,7 +145,7 @@ class TestErrorRecordClassification:
         )
         assert timeout.retryable is True
         assert rate_limit.retryable is True
-        assert provider.retryable is False
+        assert provider.retryable is True
         assert policy.retryable is False
         # Direct construction leaves retryable=False (default)
         refusal = ErrorRecord(category=ErrorCategory.REFUSAL, message="no")
