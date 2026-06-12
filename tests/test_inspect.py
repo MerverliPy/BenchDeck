@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from benchdeck.inspect import inspect_run
 from benchdeck.loader import Snapshot
@@ -15,7 +16,7 @@ def test_original_run_defects_are_detected() -> None:
     assert len(report["warnings"]) == 0, f"Expected zero warnings, got: {report['warnings']}"
 
 
-def test_inspect_reports_infrastructure_errors(monkeypatch) -> None:
+def test_inspect_reports_infrastructure_errors(monkeypatch: Any) -> None:
     snapshot = Snapshot(
         metadata={},
         infrastructure_errors=[
@@ -37,7 +38,7 @@ def test_inspect_reports_infrastructure_errors(monkeypatch) -> None:
     assert "Connection timed out" in infra_warnings[0]
 
 
-def test_inspect_planner_terminal_error_warning(monkeypatch) -> None:
+def test_inspect_planner_terminal_error_warning(monkeypatch: Any) -> None:
     snapshot = Snapshot(
         metadata={},
         planner_capture={
@@ -56,7 +57,7 @@ def test_inspect_planner_terminal_error_warning(monkeypatch) -> None:
     assert "auth_error" in planner_warnings[0]
 
 
-def test_inspect_planner_parse_error_warning(monkeypatch) -> None:
+def test_inspect_planner_parse_error_warning(monkeypatch: Any) -> None:
     snapshot = Snapshot(
         metadata={},
         planner_capture={
@@ -71,7 +72,7 @@ def test_inspect_planner_parse_error_warning(monkeypatch) -> None:
     assert "Invalid JSON in planner response" in planner_warnings[0]
 
 
-def test_inspect_planner_mode_mismatch_warning(monkeypatch) -> None:
+def test_inspect_planner_mode_mismatch_warning(monkeypatch: Any) -> None:
     snapshot = Snapshot(
         metadata={},
         plan={"mode": "single"},
@@ -85,7 +86,7 @@ def test_inspect_planner_mode_mismatch_warning(monkeypatch) -> None:
     assert len(mismatch_warnings) == 1
 
 
-def test_inspect_planner_no_error_when_empty(monkeypatch) -> None:
+def test_inspect_planner_no_error_when_empty(monkeypatch: Any) -> None:
     snapshot = Snapshot(metadata={}, planner_capture={})
     monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
     report = inspect_run(Path("/tmp/fake"))

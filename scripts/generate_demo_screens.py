@@ -158,7 +158,7 @@ def _find_font(font_path_override: str | None = None) -> str | None:
     if sys.platform == "darwin":
         font_dirs.insert(0, os.path.expanduser("~/Library/Fonts"))
 
-    best_score = -1
+    best_score: float = -1.0
     best_path: str | None = None
 
     for font_dir in font_dirs:
@@ -167,7 +167,7 @@ def _find_font(font_path_override: str | None = None) -> str | None:
             continue
         for candidate in font_path.rglob("*.ttf"):
             name = candidate.name
-            score = 0
+            score: float = 0
             for i, pat in enumerate(_MONO_PATTERNS):
                 if pat in name:
                     score = len(_MONO_PATTERNS) - i
@@ -882,7 +882,7 @@ def _render_to_png(
     y = label_y + char_h + py
     for line in lines:
         parts = _colourise_line(line, theme)
-        cx = px_x
+        cx: float = px_x
         for text, colour in parts:
             draw.text((cx, y), text, fill=colour, font=font)
             tw = draw.textlength(text, font=font)
@@ -941,7 +941,7 @@ def _render_to_webp(
     y = label_y + char_h + py
     for line in lines:
         parts = _colourise_line(line, theme)
-        cx = px_x
+        cx: float = px_x
         for text, colour in parts:
             draw.text((cx, y), text, fill=colour, font=font)
             tw = draw.textlength(text, font=font)
@@ -1023,7 +1023,7 @@ def _render_to_svg(
     y = label_y + char_h + py + font_size
     for line in lines:
         parts = _colourise_line(line, theme)
-        cx = px_x
+        cx: float = px_x
         for text, colour in parts:
             esc_text = _escape_xml(text)
             svg_lines.append(f'<text x="{cx}" y="{y}" fill="{_rgb(colour)}">{esc_text}</text>')

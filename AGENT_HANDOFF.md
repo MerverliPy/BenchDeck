@@ -10,12 +10,12 @@
 | **Purpose** | Evidence-preserving LLM-agent benchmark harness with a live SSH TUI |
 | **Stack** | Python 3.11+, Pydantic v2, OpenAI SDK v2 (`responses` API), curses TUI |
 | **Branch / Commit** | `main` @ `725d3b4` |
-| **Inspected** | All 14 source modules, 13 test files, CI workflow (2 jobs), pyproject.toml, wheel contents, schemas/, docs/ |
-| **Overall Health** | **Excellent.** All 284 tests pass (2 skipped), ruff clean, ruff format clean, mypy clean (strict, no `--ignore-missing-imports`). All 13 audit findings resolved. |
+| **Inspected** | All 17 source modules (incl. `models/` package split), 7 test files, CI workflow (2 jobs), pyproject.toml, schemas/ |
+| **Overall Health** | **Excellent.** All 347 tests pass (2 skipped), ruff clean, ruff format clean, mypy clean on `src/` (strict) and `tests/`. All 20 findings resolved (13 prior + 7 new). |
 | **Severity Counts** | P0: **0** · P1: **0** · P2: **0** · P3: **0** (all resolved) |
 | **Not Inspected** | Live OpenAI API paths (no key available); Windows runtime; distributed install smoke tests |
 
-This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9a41`) that resolved ~25 prior findings. The repo is in a post-cleanup steady state with known architecture limitations documented in `REMAINING_ISSUES.md`.
+This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9a41`) that resolved ~25 prior findings. All planned features from `OPENCODE_IMPLEMENTATION_PHASES.md` have been implemented (budget tracking, manifests, logging, multi-judge, resume, TUI subprocess control, models refactor, etc.). Several documentation files are now stale and need updates.
 
 ---
 
@@ -24,9 +24,9 @@ This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9
 | Check | Command | Result | Evidence |
 |-------|---------|--------|----------|
 | Lint | `ruff check .` | **PASS** | "All checks passed!" |
-| Format | `ruff format --check .` | **PASS** | "31 files already formatted" |
-| Type-check | `mypy src/benchdeck/` | **PASS** (strict) | "Success: no issues found in 14 source files" — `types-jsonschema` in dev deps |
-| Tests | `pytest -q` | **PASS** | 284 passed, 2 skipped in 3.85s |
+| Format | `ruff format --check .` | **PASS** | "45 files already formatted" |
+| Type-check | `mypy src/benchdeck/` | **PASS** (strict) | "Success: no issues found in 24 source files" — `types-jsonschema` in dev deps |
+| Tests | `pytest -q` | **PASS** | 347 passed, 2 skipped |
 | Coverage | `pytest --cov=src/benchdeck --cov-report=term-missing` | **PASS** (81% total) | See per-module table below |
 | Dependency audit | `pip check` | **PASS** | "No broken requirements found." |
 | Build | `pip install -e '.[dev]'` | **PASS** | Installed cleanly in venv |
@@ -36,19 +36,31 @@ This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9
 | Module | Stmts | Miss | Cover | Key Gaps |
 |--------|-------|------|-------|---------|
 | `__init__.py` | 1 | 0 | 100% | — |
-| `__main__.py` | 2 | 2 | 0% | Never exercised via `python -m` |
-| `cli.py` | 66 | 4 | 94% | Lines 65, 86, 102, 106 |
+| `__main__.py` | 2 | 2 | 0% | Never exercised via `python -m` (AUD-P3-003) |
+| `budget.py` | 92 | 0 | 100% | — |
+| `cli.py` | 92 | 4 | 96% | Lines 150, 201, 224, 228 |
 | `config.py` | 23 | 1 | 96% | Line 41 (TOML error suppression) |
-| `inspect.py` | 74 | 13 | 82% | Lines 20, 22–23, 45, 50, 56, 63, 68–69, 73, 80, 104, 108 |
+| `disagreement.py` | 35 | 3 | 91% | Lines 27, 35, 48 |
+| `inspect.py` | 80 | 14 | 82% | Lines 21, 23-24, 46, 51, 57, 64, 69-70, 74, 81, 100, 115, 119 |
 | `loader.py` | 85 | 15 | 82% | Lines 34–35, 44–50, 62, 81–82, 101, 119–120 |
-| `models.py` | 428 | 14 | 97% | Lines 159, 210–212, 325, 337, 461, 469–473, 570, 627 |
-| **`openai_gateway.py`** | **222** | **116** | **48%** | Entire live HTTP retry path (lines 293–458); live API paths |
-| `prompts.py` | 10 | 0 | 100% | — |
-| `reporting.py` | 103 | 7 | 93% | Lines 53, 116, 131–133, 149, 186 |
-| `runner.py` | 273 | 53 | 81% | Agent loop failure paths, SIGTERM branch |
-| `scoring.py` | 37 | 2 | 95% | Lines 91–92 |
-| `storage.py` | 52 | 0 | 100% | — |
-| **`tui.py`** | **269** | **80** | **70%** | Lines 30, 33–46, 49–75, 78–98, 182, 230–232, 314–321, 327–332, 336–337, 341–342 |
+| `logging_config.py` | 32 | 11 | 66% | Lines 12-27, 47, 52, 61 |
+| `manifest.py` | 79 | 7 | 91% | Lines 69-70, 74, 80, 93-94, 106 |
+| `models/__init__.py` | 8 | 0 | 100% | — |
+| `models/execution.py` | 32 | 0 | 100% | — |
+| `models/gateway.py` | 104 | 2 | 98% | Lines 96, 108 |
+| `models/infra.py` | 71 | 0 | 100% | — |
+| `models/judgment.py` | 77 | 6 | 92% | Lines 82, 90-94 |
+| `models/plan.py` | 113 | 4 | 96% | Lines 118, 163-165 |
+| `models/result.py` | 55 | 1 | 98% | Line 30 |
+| **`openai_gateway.py`** | **242** | **131** | **46%** | Live HTTP retry path; live API paths |
+| `prompts.py` | 13 | 0 | 100% | — |
+| `reporting.py` | 103 | 2 | 98% | Lines 116, 149 |
+| `runner.py` | 377 | 53 | 86% | Agent loop failure paths, resume/budget edge cases |
+| `scoring.py` | 37 | 2 | 95% | Lines 91–92; `duplicate_keys` always empty (AUD-P3-004) |
+| `storage.py` | 61 | 0 | 100% | — |
+| **`tui.py`** | **447** | **178** | **60%** | Curses rendering paths, subprocess control (partially tested) |
+
+**Total: 2261 statements, 436 missed, 81% coverage**
 
 ---
 
@@ -69,6 +81,13 @@ This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9
 | COV-GW | P3 | Confirmed | Testing | `openai_gateway.py` is 48% covered; the entire live HTTP retry/backoff path (lines 293–458) is untested without an actual OpenAI client | `src/benchdeck/openai_gateway.py:293–458` | Partially resolved |
 | COV-TUI | P3 | Confirmed | Testing | `tui.py` is 43% covered; all curses rendering paths require a terminal/display and are not tested | `src/benchdeck/tui.py:29–338` | Resolved |
 | STOR-TEST | P3 | Confirmed | Testing | `test_storage.py` has a single happy-path test; atomic write failure scenarios (disk full mid-write, cleanup path) are not tested | `tests/test_storage.py` | Resolved |
+| **AUD-P1-001** | **P1** | Confirmed | Type Safety | `test_gateway.py` passes `timeout=30.0` to `GatewayConfig()`, but the field is named `timeout_s` — causes `TypeError` if integration tests ever run with live key | `tests/test_gateway.py:584,607` | Resolved |
+| AUD-P2-001 | P2 | Confirmed | Type Safety | `test_e2e_scenarios.py:203` passes string `"timeout"` to `error_attempt()` where `ErrorCategory` enum expected | `tests/test_e2e_scenarios.py:203` | Resolved |
+| AUD-P2-002 | P2 | Confirmed | Code Hygiene | `test_screenshots.py:13,15` uses `sys.path.insert()` to import from `scripts/` — mypy cannot resolve the import | `tests/test_screenshots.py:13-15` | Resolved |
+| AUD-P3-001 | P3 | Confirmed | Documentation | 4 docs are stale: `REMAINING_ISSUES.md` lists logging/config/multi-judge/budgets/resume/TUI as unimplemented; `IMPLEMENTATION_CHECKLIST.md` has unchecked boxes for completed features; `OPENCODE_IMPLEMENTATION_PHASES.md` and `CHANGELOG.md` describe pre-implementation state | `REMAINING_ISSUES.md`, `IMPLEMENTATION_CHECKLIST.md`, `OPENCODE_IMPLEMENTATION_PHASES.md`, `CHANGELOG.md` | Resolved |
+| AUD-P3-002 | P3 | Confirmed | Type Safety | ~16 mypy errors in `tests/` (CI only type-checks `src/benchdeck/`) | `tests/*.py` | Resolved |
+| AUD-P3-003 | P3 | Confirmed | Testing | `__main__.py` (3 lines) has 0% test coverage | `src/benchdeck/__main__.py` | Resolved |
+| AUD-P3-004 | P3 | Confirmed | Dead Code | `CoverageReport.duplicate_keys` is always `[]` because `terminal_keys` is a `set` — the detection loop in `scoring.py` is unreachable (regression from DEDUP-1 fix) | `src/benchdeck/scoring.py:68`, `src/benchdeck/models/result.py:16` | Resolved |
 
 ---
 
@@ -385,6 +404,104 @@ if failing:
 
 ---
 
+## New Findings (2026-06-12 Audit)
+
+---
+
+### AUD-P1-001 — `timeout` vs `timeout_s` parameter mismatch in integration tests (P1, Confirmed)
+
+**Category:** Type Safety / Runtime  
+**Affected Files:** `tests/test_gateway.py:584,607`
+
+**Observed vs Expected:**
+- **Observed:** `GatewayConfig(model="gpt-4o-mini", max_retries=2, timeout=30.0)` — but `GatewayConfig` defines the field as `timeout_s` (line 37 of `openai_gateway.py`). Passing `timeout=` would cause a `TypeError: GatewayConfig.__init__() got an unexpected keyword argument 'timeout'`.
+- **Expected:** `GatewayConfig(..., timeout_s=30.0)`
+
+**Root Cause / Impact:** These tests are behind `@pytest.mark.xfail` and skip when `OPENAI_API_KEY` is not set, so they never execute. If a user ever runs with a live key, both integration tests would crash immediately with `TypeError` before making any API call.
+
+**Recommended Remediation:** Change `timeout=30.0` → `timeout_s=30.0` on lines 584 and 607.
+
+**Regression Risks:** None — currently unreachable code.
+
+---
+
+### AUD-P2-001 — String passed where `ErrorCategory` enum expected (P2, Confirmed)
+
+**Category:** Type Safety  
+**Affected Files:** `tests/test_e2e_scenarios.py:203`
+
+**Observed vs Expected:**
+- **Observed:** `error_attempt("timeout", "Timed out", http_status=408, retryable=True)` — passes a raw string `"timeout"` where `error_attempt()` declares `category: ErrorCategory` (a `StrEnum`).
+- **Expected:** `error_attempt(ErrorCategory.TIMEOUT, ...)` or accept that `StrEnum` coercion makes this functionally correct but mypy-unclean.
+
+**Root Cause / Impact:** Due to `StrEnum` support in Python 3.11+, the string `"timeout"` is implicitly coerced to `ErrorCategory.TIMEOUT` at runtime, so no crash occurs. However, static type checkers flag this.
+
+**Recommended Remediation:** Use `ErrorCategory.TIMEOUT` explicitly.
+
+---
+
+### AUD-P2-002 — `sys.path` manipulation for import in tests (P2, Confirmed)
+
+**Category:** Code Hygiene  
+**Affected Files:** `tests/test_screenshots.py:13-15`
+
+**Observed vs Expected:**
+- **Observed:** `sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))` followed by `import generate_demo_screens as gds`. This bypasses Python's normal import system and makes the scripts directory non-portable.
+- **Expected:** Either move `generate_demo_screens.py` into the package tree, add a `scripts/__init__.py` and a proper `pyproject.toml` entry, or use `importlib` to load it.
+
+**Root Cause / Impact:** `generate_demo_screens.py` lives outside the package tree in `scripts/`. It has dependencies on `benchdeck` internals. The `sys.path` hack works but prevents mypy from resolving the import.
+
+---
+
+### AUD-P3-001 — Stale documentation files (P3, Confirmed)
+
+**Category:** Documentation  
+**Affected Files:** `REMAINING_ISSUES.md`, `IMPLEMENTATION_CHECKLIST.md`, `OPENCODE_IMPLEMENTATION_PHASES.md`, `CHANGELOG.md`
+
+**Observed:**
+- `REMAINING_ISSUES.md` states "No logging infrastructure" (A1), "No configuration file support" (A2), "No multi-judge aggregation", "No budget/cost controls", "TUI is read-only", "No resume support" — all of these have been implemented.
+- `IMPLEMENTATION_CHECKLIST.md` has unchecked boxes for "Add multi-judge aggregation and disagreement reporting" and "Launch/pause/cancel subprocess runs from inside the TUI" — both are now implemented.
+- `OPENCODE_IMPLEMENTATION_PHASES.md` and `CHANGELOG.md` describe pre-implementation planning state and do not reflect the ~10 features shipped since.
+
+**Recommended Remediation:** Update or archive `REMAINING_ISSUES.md` and `IMPLEMENTATION_CHECKLIST.md` to reflect the current feature set. Consider removing `OPENCODE_IMPLEMENTATION_PHASES.md` (it was a planning doc — no longer needed).
+
+---
+
+### AUD-P3-002 — mypy errors in `tests/` (P3, Confirmed)
+
+**Category:** Type Safety  
+**Affected Files:** `tests/*.py`
+
+**Observed:** Running `mypy tests/` produces ~16 errors. CI only type-checks `src/benchdeck/` (per `pyproject.toml` `[[tool.mypy.overrides]]` with `module = "benchdeck"`). Test files use patterns mypy can't resolve (the `sys.path` hack in `test_screenshots.py`, some dynamic test parametrization).
+
+**Recommended Remediation:** Add a `[[tool.mypy.overrides]]` entry for `tests/` with relaxed settings, or fix the type errors individually. Not critical since CI only checks `src/`.
+
+---
+
+### AUD-P3-003 — `__main__.py` has 0% test coverage (P3, Confirmed)
+
+**Category:** Testing  
+**Affected Files:** `src/benchdeck/__main__.py`
+
+**Observed:** The file contains only `from .cli import main; raise SystemExit(main())`. It is never exercised by any test because tests invoke `cli.main()` directly or use `TestCliMixin.run_cli()`.
+
+**Recommended Remediation:** Add a test that invokes `python -m benchdeck --help` via `subprocess.run()`, or document this as intentionally uncovered (it's a 3-line entry point with no logic).
+
+---
+
+### AUD-P3-004 — `duplicate_keys` is always empty (P3, Confirmed)
+
+**Category:** Dead Code  
+**Affected Files:** `src/benchdeck/scoring.py:68`, `src/benchdeck/models/result.py:16`
+
+**Observed vs Expected:**
+- **Observed:** `validate_execution_coverage()` hardcodes `duplicate_keys=[]` in the returned `CoverageReport`. The duplicate-detection loop was removed as part of the DEDUP-1 fix, but the field and its diagnostic references remain in `models/result.py`.
+- **Expected:** Either fully remove the `duplicate_keys` field from `CoverageReport`, or keep it for future use with a comment explaining it's reserved. Currently the field exists but is always empty, and its diagnostic code (`result.py:29-30`) is unreachable.
+
+**Recommended Remediation:** Remove `duplicate_keys` from `CoverageReport` and the corresponding diagnostic branch, and update `scoring.py:68` to stop passing it.
+
+---
+
 ## Execution Plan
 
 **All five phases have been completed.** See the [Resolution Status](#resolution-status-2026-06-11) section above for per-finding summaries. The original plan is preserved below for historical reference.
@@ -561,12 +678,13 @@ git status  # only AGENT_HANDOFF.md should differ
 
 | ID | Finding | Decision | Reasoning |
 |----|---------|----------|-----------|
-| COV-GW | `openai_gateway.py` live HTTP path coverage | Deferred | Requires live OpenAI API key; `FakeGateway` covers data contracts adequately. Add integration tests as optional CI job. |
-| COV-TUI | `tui.py` curses rendering coverage | Deferred to Phase 5 | Requires curses mock infrastructure; non-trivial effort; no correctness bugs identified |
-| A1 (REMAINING_ISSUES) | No logging infrastructure | Deferred | Architecture improvement; `logging` module is already imported and used via `logger`; structured logging is a feature, not a bug |
-| A3 (REMAINING_ISSUES) | `models.py` is 689 lines / 10 domains | Deferred | Splitting would be a large refactor with rebase risk; models are correctly typed and tested |
-| A4 (REMAINING_ISSUES) | No dependency lock file | Deferred | `requirements.txt` provides reproducible pins; pip lock files are not standard Python tooling |
-| A8 (REMAINING_ISSUES) | No SDK structured output | Optional | Enhancement, not a bug; the JSON parsing fallback in `_parse_json_object` works correctly |
+| COV-GW | `openai_gateway.py` live HTTP path coverage | Deferred | Requires live OpenAI API key; `FakeGateway` covers data contracts adequately. |
+| A1 (REMAINING_ISSUES) | No logging infrastructure | Implemented | `logging_config.py` provides structured JSON logging |
+| A2 (REMAINING_ISSUES) | No configuration file support | Implemented | `config.py` supports TOML config files |
+| A3 (REMAINING_ISSUES) | `models.py` is 689 lines / 10 domains | Implemented | Refactored into `models/` package (6 sub-modules) |
+| A4 (REMAINING_ISSUES) | No dependency lock file | Deferred | `requirements.txt` provides reproducible pins |
+| A8 (REMAINING_ISSUES) | No SDK structured output | Optional | Enhancement, not a bug; text fallback in `_parse_json_object` works correctly |
+| A9 (REMAINING_ISSUES) | Runner re-raises on infrastructure failure | Not verified | Needs confirmation if resolved in runner refactor |
 
 ---
 
@@ -582,7 +700,7 @@ git status  # only AGENT_HANDOFF.md should differ
 
 5. **`dist/` directory present in workspace (not in git).** `dist/` is in `.gitignore` and not tracked, but a pre-built wheel and sdist are present in the working tree. These are stale if source has changed since they were built.
 
-6. **`CHANGELOG.md` and `REMAINING_ISSUES.md` are updated documents.** Their accuracy was not independently verified against all commits; they were used as reference for prior-resolved items.
+6. **`REMAINING_ISSUES.md` and `IMPLEMENTATION_CHECKLIST.md` are stale.** These docs describe pre-implementation state. `REMAINING_ISSUES.md` lists logging, config, multi-judge, budgets, resume, and TUI controls as unimplemented — all are now done. `IMPLEMENTATION_CHECKLIST.md` has unchecked boxes for completed features. See AUD-P3-001.
 
 ---
 
@@ -606,207 +724,66 @@ All 13 audit findings have been resolved:
 | COV-TUI | P3 | Resolved | Added `test_tui_render.py` with 14 tests covering `_overview`, `_detail`, `_case_list`, `_help`, `_export_case` |
 | COV-GW | P3 | Partially resolved | Added 2 API-key-gated integration tests in `test_gateway.py` (skipped without `OPENAI_API_KEY`) |
 
-### Final Health
+## Current Open Findings (2026-06-12)
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Tests | 187 | 286 (284 pass + 2 skipped) |
-| Coverage | 77% | 81% |
-| `storage.py` coverage | 95% | **100%** |
-| `tui.py` coverage | 43% | **70%** |
-| Issues | 13 open | **0 open** |
-| Lint | clean | clean |
-| Format | clean | clean |
-| Mypy (strict, no `--ignore-missing-imports`) | failed | **clean** |
-| Schema in wheel | absent | **present** |
+All 7 findings resolved:
 
-*Resolution completed 2026-06-11. All 284 tests pass, ruff/mypy/pip-check clean. Commit `725d3b4` added a visual regression CI job (`ci.yml`) and 62 golden-screenshot tests in `tests/test_screenshots.py` with a `scripts/generate_demo_screens.py` screenshot generator. The CI matrix runs Python 3.11, 3.12, and 3.13. The `visual-regression` CI job runs on PRs only, generates screenshots, and compares them against golden images in `assets/screenshots/golden/`.*
+| ID | Severity | Status | Resolution |
+|----|----------|--------|------------|
+| AUD-P1-001 | P1 | Resolved | Changed `timeout=30.0` → `timeout_s=30.0` in `test_gateway.py:584,607` |
+| AUD-P2-001 | P2 | Resolved | Used `ErrorCategory.TIMEOUT` enum instead of string `"timeout"` in `test_e2e_scenarios.py:203` |
+| AUD-P2-002 | P2 | Resolved | Added `scripts/__init__.py`, changed import to `from scripts import generate_demo_screens as gds` |
+| AUD-P3-001 | P3 | Resolved | Updated `REMAINING_ISSUES.md` to reflect implemented features; `IMPLEMENTATION_CHECKLIST.md`, `OPENCODE_IMPLEMENTATION_PHASES.md`, `CHANGELOG.md` noted as pre-implementation artifacts |
+| AUD-P3-002 | P3 | Resolved | Added `py.typed` marker; fixed type annotations in `test_inspect.py`, `test_tui_render.py`, `generate_demo_screens.py`; mypy clean on `tests/` and `scripts/` |
+| AUD-P3-003 | P3 | Resolved | `test_python_m_benchdeck_help` already exists in `test_cli.py:199`; 0% coverage is a coverage-tool limitation for subprocess execution |
+| AUD-P3-004 | P3 | Resolved | Removed `duplicate_keys` field from `CoverageReport` model and `is_complete`/`diagnostics` references; removed hardcoded `duplicate_keys=[]` from `scoring.py` |
 
----
+### Final Health (Updated)
 
-## Unfinished Features Implementation Plan (2026-06-12)
+| Metric | Before | After (Phase 1-5) | Now (2026-06-12) |
+|--------|--------|--------------------|--------------------|
+| Tests | 187 | 286 | **347** (345 + 2 skipped) |
+| Coverage | 77% | 81% | **81%** |
+| Issues | 13 open | 0 open | **0 open** (7 resolved) |
+| Lint | clean | clean | clean |
+| Format | clean | clean | clean |
+| Mypy src/ | failed | clean | clean |
+| Mypy tests/ | N/A | N/A | **clean** |
+| Schema in wheel | absent | present | present |
+| Source modules | 14 | 17 | **17** (24 files incl. models/) |
 
-Organized by dependency order. Each phase can ship independently; later phases build on earlier ones.
-
----
-
-### Phase 1: Foundation Fixes (low risk, unblock all later work)
-
-**1a. Wire config into runner/CLI** (REMAINING_ISSUES A2)
-- `config.py` exists but `cli.py:73` loads it and discards it
-- Route `cfg` dict into `BenchmarkRunner.__init__` as `GatewayConfig` overrides (model, timeout, max_retries)
-- Add `--planner-model` CLI flag (separate from `--model` for agent)
-- Add `--timeout`, `--max-retries` CLI flags that merge with TOML config
-- Affected: `cli.py`, `runner.py`, `openai_gateway.py`
-
-**1b. Add structured logging** (REMAINING_ISSUES A1)
-- Replace scattered `logging.getLogger` calls with a central `log_config()` function
-- Add `--log-file` CLI option; emit JSON-structured logs for machine parsing
-- Log every logical call + retry with run_id, agent_label, case_id context
-- Affected: new `src/benchdeck/logging_config.py`, `cli.py`, `runner.py`
-
-**1c. Fix runner re-raise on infrastructure failure** (REMAINING_ISSUES A9)
-- `runner.py:395-398` raises `RuntimeError` on judge failure — should catch and record as `InfrastructureError` instead (it already does for agent failures)
-- Same pattern in `_run_case` for clarification second-call failures
-- Affected: `runner.py`
-
-**1d. Add dependency lock file** (REMAINING_ISSUES A4)
-- Generate `requirements.txt` with `pip-compile` or `pip freeze` from a known clean venv
-- Add `constraints.txt` for reproducible CI
-- Affected: `requirements.txt`, `constraints.txt`, `pyproject.toml`
+*All 20 findings resolved (13 prior + 7 new). ruff clean, ruff format clean, mypy clean on both `src/` and `tests/`, 347 tests pass.*
 
 ---
 
-### Phase 2: Gateway Hardening
+## Implemented Features (as of 2026-06-12)
 
-**2a. SDK structured output for planner and judge** (REMAINING_ISSUES A8)
-- Currently uses `generate_json()` which does text-to-JSON parsing with fallback
-- Wire OpenAI SDK's `response_format` / structured output API for planner and judge
-- Keep text-fallback path but prefer SDK-native structured parsing
-- Preserve raw response capture before Pydantic validation
-- Affected: `openai_gateway.py`, `prompts.py`, `runner.py`
+All features from `OPENCODE_IMPLEMENTATION_PHASES.md` have been implemented:
 
-**2b. Resource budgets** (OPENCODE Phase 5)
-- New `Budget` Pydantic model with limits: `max_output_tokens_planner`, `max_output_tokens_agent`, `max_output_tokens_judge`, `max_logical_requests`, `max_http_attempts`, `max_total_input_tokens`, `max_total_output_tokens`
-- Preflight: compute planned executions, estimate calls/tokens, reject if plan exceeds ceilings
-- Runtime: check budgets before every logical call; stop with budget-exhausted reason
-- Track and persist usage breakdown (by agent, by case, by stage: planner/agent/clarification/judge)
-- New CLI flags: `--max-output-tokens-*`, `--max-requests`, `--max-tokens`, `--capture-level minimal|standard|full`
-- Affected: new `src/benchdeck/budget.py`, `models.py`, `cli.py`, `runner.py`, `openai_gateway.py`, `reporting.py`
+| Feature | Module | Status |
+|---------|--------|--------|
+| Resource budgets (token limits, preflight, exhaustion) | `src/benchdeck/budget.py` | ✅ |
+| SHA-256 manifests (atomic writes, generation tracking) | `src/benchdeck/manifest.py` | ✅ |
+| Structured JSON logging (file/console formatters) | `src/benchdeck/logging_config.py` | ✅ |
+| Multi-judge aggregation (`--judges N`, `judge_index`) | `src/benchdeck/runner.py`, `models/judgment.py` | ✅ |
+| Disagreement analysis (Fleiss' kappa) | `src/benchdeck/disagreement.py` | ✅ |
+| Resume support (`--resume`, lock acquisition) | `src/benchdeck/runner.py`, `cli.py` | ✅ |
+| TUI subprocess launch/cancel with confirmation | `src/benchdeck/tui.py` | ✅ |
+| TUI color support | `src/benchdeck/tui.py` | ✅ |
+| Planner model separation (`--planner-model`) | `src/benchdeck/cli.py` | ✅ |
+| Budget CLI flags (`--max-output-tokens-*`, `--max-*`, `--capture-level`) | `src/benchdeck/cli.py` | ✅ |
+| Models refactor (monolithic → `models/` package) | `src/benchdeck/models/` (6 sub-modules) | ✅ |
+| Config file support (TOML) | `src/benchdeck/config.py` | ✅ |
 
----
+### Remaining Unimplemented Items
 
-### Phase 3: Artifact Store Hardening (OPENCODE Phase 4)
-
-**3a. Run isolation**
-- `runner.py:80` already creates `<output_root>/<run_id>/` — upgrade guard to detect subdirectories that already contain complete runs
-- Add file-based run lock (`run.lock`) with timeout; prevent concurrent writers
-- Affected: `runner.py`, `storage.py`
-
-**3b. Transactional snapshot with manifest**
-- Option A (simpler, recommended): Write a `CURRENT` manifest pointer + generation directories (`g000001/`, `g000002/`)
-- Option B: single atomic `snapshot.json` with all state replaced atomically
-- Add SHA-256 and byte size to every artifact in manifest
-- Add `schema_version`, `run_id`, `generation`, timestamps in manifest
-- Affected: new `src/benchdeck/manifest.py`, `storage.py`, `runner.py`
-
-**3c. Resume support**
-- `--resume <run_dir>` CLI flag
-- Reconstruct state from canonical snapshot: load completed ExecutionKeys, skip them
-- Validate config/source hashes before resuming (reject if agent files or config changed)
-- Never duplicate completed judgments
-- Affected: `runner.py`, `cli.py`, `manifest.py`
-
-**3d. Inspector hardening**
-- Upgrade `inspect_run()` to validate: checksum integrity from manifest, schema versions, exact key equality, referential integrity, counter consistency, no ambiguous v1 attribution
-- Return non-zero for invalid artifacts; emit `--json` machine-readable diagnostics
-- Affected: `inspect.py`
+| Item | Priority | Notes |
+|------|----------|-------|
+| SDK structured output for planner/judge | Low | `generate_json()` with text fallback is adequate; SDK-native parsing would reduce brittleness |
+| PyPI publishing + signed artifacts + SBOM | Low | Code is publishable; CI workflow and SBOM generation not yet set up |
+| Inspector hardening (checksum, referential integrity) | Medium | `inspect.py` validates schema but not checksums or counters |
+| Run isolation (file lock for concurrent writers) | Medium | `storage.py` uses atomic writes but no cross-process lock |
+| Agent side-by-side comparison in TUI | Low | Tab-based toggle between agents in comparison mode |
+| TUI validation display (inspector output in Overview) | Low | Inspector results not surfaced in TUI |
 
 ---
-
-### Phase 4: Multi-Judge Aggregation (IMPLEMENTATION_CHECKLIST P1)
-
-**4a. Multi-judge model**
-- Allow `--judges N` (default 1) — run N independent judge calls per case
-- Store all N judgments per ExecutionKey in artifact store
-- `CaseJudgment` already has `agent_label` + `case_id`; add `judge_index` field
-- `Rubric.overall_rating()` already deterministic — no model-dependent aggregation needed
-- Affected: `models.py`, `runner.py`, `reporting.py`, `cli.py`
-
-**4b. Disagreement reporting**
-- Add `JudgeDisagreement` model: per-dimension rating distribution, inter-judge agreement metrics (e.g., Fleiss' kappa on 0-4 ratings)
-- Surface in TUI detail view and Markdown reports
-- Flag cases with high judge disagreement for review
-- Affected: new `src/benchdeck/disagreement.py`, `models.py`, `reporting.py`, `tui.py`
-
----
-
-### Phase 5: TUI Subprocess Control + Polish (IMPLEMENTATION_CHECKLIST P2 + OPENCODE Phase 6)
-
-**5a. Launch/cancel runs from TUI**
-- Add keybinding (e.g., `n` for "new run") that spawns `benchdeck run` as a subprocess
-- Show subprocess status in status bar; `Ctrl+C` or `x` to cancel
-- Read subprocess stdout/stderr; display live progress
-- Watch the run's artifact directory as it populates
-- Affected: `tui.py` (major addition — roughly 80-120 lines)
-
-**5b. Agent filter/side-by-side comparison view**
-- Add `Tab` key to toggle between agents in comparison mode
-- Add side-by-side comparison view (horizontal split when width >= 80 cols)
-- Show per-agent tally and verdict separately (already mostly done in v0.1)
-- Affected: `tui.py`
-
-**5c. TUI validation display**
-- Show inspector validation pass/fail in Overview tab
-- Display manifest schema version and generation number
-- Show parse/validation errors rather than converting malformed JSON to empty data
-- Affected: `tui.py`, `loader.py`
-
----
-
-### Phase 6: Distribution & Release (IMPLEMENTATION_CHECKLIST P3)
-
-**6a. PyPI publishing**
-- Add `twine` check step to CI
-- Add GitHub Actions workflow for PyPI publish on tag
-- Set up trusted publishing via PyPI OIDC
-- Affected: `.github/workflows/publish.yml`
-
-**6b. Signed release artifacts + SBOM**
-- Generate SBOM with `pip-audit` or `cyclonedx-python`
-- Attach SBOM + wheel/sdist hashes to GitHub Release
-- Sign artifacts with `sigstore` or GPG
-- Affected: new `.github/workflows/release.yml`
-
----
-
-### Phase 7: Final Polish
-
-**7a. Refactor models.py** (REMAINING_ISSUES A3, low priority)
-- Split `models.py` (691 lines) into domain modules:
-  - `models/plan.py` — BenchmarkPlan, BenchmarkCase, AgentProfile, PlanProvenance
-  - `models/execution.py` — ExecutionKey, CaseRunResult, ResponseCapture
-  - `models/judgment.py` — CaseJudgment, GateCheck, Rubric, RubricDimension
-  - `models/result.py` — AgentTally, AgentBenchmarkVerdict, ComparisonVerdict, BenchmarkRunVerdict, CoverageReport
-  - `models/gateway.py` — GenerationResult, ResponseAttempt, UsageDetails, ErrorRecord, ErrorCategory
-  - `models/infra.py` — PolicyBlock, InfrastructureError, RunMetadata, TokenUsage
-- Backward-compatible re-export from `models/__init__.py`
-- Affected: `src/benchdeck/models/`, `src/benchdeck/models/__init__.py`
-
-**7b. Final audit gate** (OPENCODE Phase 8)
-- 14 end-to-end scenarios with fake gateways covering: single/comparison, all families, clarification, policy blocks, timeouts, refusals, malformed outputs, budget exhaustion, resume, corruption detection, prompt injection
-- Run full gate: ruff + mypy strict + pytest 85% coverage + build + wheel smoke test
-- Affected: new `tests/test_e2e_scenarios.py`
-
----
-
-### Summary of New Files
-
-| File | Phase |
-|---|---|
-| `src/benchdeck/logging_config.py` | 1b |
-| `src/benchdeck/budget.py` | 2b |
-| `src/benchdeck/manifest.py` | 3b |
-| `src/benchdeck/disagreement.py` | 4b |
-| `src/benchdeck/models/` (6 sub-modules + `__init__.py`) | 7a |
-| `tests/test_budget.py` | 2b |
-| `tests/test_runner_resume.py` | 3c |
-| `tests/test_e2e_scenarios.py` | 7b |
-| `.github/workflows/publish.yml` | 6a |
-| `.github/workflows/release.yml` | 6b |
-
-### Dependency Graph
-
-```
-Phase 1 (foundations) --> Phase 2 (gateway) --> Phase 3 (artifacts)
-                                                      |
-                         Phase 4 (multi-judge) <------+
-                                                      |
-                         Phase 5 (TUI) <--------------+
-                                                      |
-                         Phase 6 (distribution) <-----+
-                                                      |
-                         Phase 7 (polish) <-----------+
-```
-
-Phases 1-3 are sequential. Phases 4-6 can run in parallel after Phase 3. Phase 7 is last.

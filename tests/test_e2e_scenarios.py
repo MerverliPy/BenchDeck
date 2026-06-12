@@ -11,12 +11,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     make_case,
     make_comparison_plan,
     make_minimal_plan,
 )
-from fakes import (  # type: ignore[import-not-found]
+from fakes import (
     AttemptScript,
     CallScript,
     FakeGateway,
@@ -29,6 +29,7 @@ from fakes import (  # type: ignore[import-not-found]
 
 from benchdeck import models as _m
 from benchdeck.models import BenchmarkPlan
+from benchdeck.models.gateway import ErrorCategory
 from benchdeck.runner import BenchmarkRunner
 
 
@@ -200,7 +201,7 @@ def test_e2e_timeout_then_success(tmp_path: Path) -> None:
 
     retry_script = CallScript(
         attempts=[
-            error_attempt("timeout", "Timed out", http_status=408, retryable=True),
+            error_attempt(ErrorCategory.TIMEOUT, "Timed out", http_status=408, retryable=True),
             AttemptScript(output_text="OK at last", input_tokens=10, output_tokens=20),
         ]
     )

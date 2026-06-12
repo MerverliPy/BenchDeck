@@ -39,7 +39,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-benchdeck = ["schemas/*.json"]
+benchdeck = ["schemas/*.json", "py.typed"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

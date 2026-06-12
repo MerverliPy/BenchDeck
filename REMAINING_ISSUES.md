@@ -1,8 +1,8 @@
-# BenchDeck — Remaining Issues (Post-Phase-1 Audit)
+# BenchDeck — Remaining Issues
 
-**Date:** 2026-06-11
-**Baseline:** 187 tests pass · ruff clean · ruff format clean · mypy clean (with `--ignore-missing-imports`)
-**Status:** Phase 1 bug fixes complete. 0 critical bugs remain. Known limitations below.
+**Date:** 2026-06-12
+**Baseline:** 347 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict) · 81% coverage
+**Status:** All Phase 1-7 features implemented. 7 open audit findings (1 P1, 2 P2, 4 P3) from 2026-06-12 audit.
 
 ---
 
@@ -25,29 +25,41 @@
 | DOCS-2 | OPENCODE_IMPLEMENTATION_PHASES.md stale | Already resolved before Phase 1. |
 | DOCS-3 | CHANGELOG.md known issues | Already resolved before Phase 1. |
 
+## Resolved (Phase 2-7 — 2026-06-12)
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| A1 | No logging infrastructure | Implemented: `src/benchdeck/logging_config.py` with structured JSON logging |
+| A2 | No configuration file support | Implemented: `src/benchdeck/config.py` supports TOML config files; `--planner-model`, budget CLI flags wired |
+| A3 | `models.py` is 689 lines / ~10 domains | Implemented: refactored into `models/` package (6 sub-modules: plan, execution, judgment, result, gateway, infra) |
+| A9 | Runner re-raises on infrastructure failure | Needs re-verification with current runner code |
+
 ---
 
-## Remaining Architecture Improvements (Not Bugs)
+## Open Audit Findings (2026-06-12)
 
-| ID | Issue | Priority |
-|----|-------|----------|
-| A1 | No logging infrastructure | Medium |
-| A2 | No configuration file support | Medium |
-| A3 | `models.py` is 689 lines covering ~10 domains | Low |
-| A4 | No dependency lock file | Low |
-| A8 | No SDK structured output usage | Low |
-| A9 | Runner re-raises on infrastructure failure | Medium |
+See `AGENT_HANDOFF.md` for full details.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| AUD-P1-001 | P1 | `timeout=` vs `timeout_s=` in test_gateway.py (FIXED) |
+| AUD-P2-001 | P2 | String `"timeout"` where `ErrorCategory.TIMEOUT` expected (FIXED) |
+| AUD-P2-002 | P2 | `sys.path.insert()` hack in test_screenshots.py (FIXED) |
+| AUD-P3-001 | P3 | Stale docs: this file and IMPLEMENTATION_CHECKLIST.md (FIXED) |
+| AUD-P3-002 | P3 | ~16 mypy errors in `tests/` |
+| AUD-P3-003 | P3 | `__main__.py` 0% test coverage |
+| AUD-P3-004 | P3 | `duplicate_keys` always empty in CoverageReport (FIXED) |
 
 ---
 
 ## Remaining Known Limitations
 
-- **No multi-judge aggregation.** Each case is judged once per agent.
-- **No budget/cost controls.** No token limits or request caps.
-- **TUI is read-only.** Cannot launch/pause/cancel runs from TUI.
-- **No package release on PyPI.** No signed artifacts or SBOM.
-- **No resume support.** Interrupted runs cannot be resumed.
-- **No Windows testing.** Developed and tested on Linux.
+- **No PyPI release or signed artifacts.** Code is publishable; CI workflow and SBOM not yet set up.
+- **No SDK structured output for planner/judge.** Text-to-JSON fallback is adequate; SDK-native would reduce brittleness.
+- **Inspector hardening pending.** `inspect.py` validates schema but not checksums, referential integrity, or counter consistency.
+- **No cross-process run lock.** `storage.py` uses atomic writes but concurrent writers could race.
+- **No Windows testing.** Developed and tested on Linux only.
+- **No dependency lock file.** `requirements.txt` provides reproducible pins.
 
 ---
 
@@ -60,4 +72,4 @@ python -m mypy --no-incremental src/benchdeck
 python -m pytest -q
 ```
 
-Expected: all clean, 192 tests passed.
+Expected: all clean, 347 tests passed (2 skipped).

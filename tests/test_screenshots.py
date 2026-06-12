@@ -10,9 +10,11 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+_here = Path(__file__).resolve()
+if str(_here.parents[1]) not in sys.path:
+    sys.path.insert(0, str(_here.parents[1]))
 
-import generate_demo_screens as gds  # noqa: E402
+from scripts import generate_demo_screens as gds  # noqa: E402
 
 # ── theme resolution ────────────────────────────────────────────────────────
 

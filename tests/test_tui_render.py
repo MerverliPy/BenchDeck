@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from benchdeck.loader import Snapshot
@@ -33,11 +34,11 @@ def _mock_popen() -> Generator[MagicMock, None, None]:
 
 def _snapshot_with_data(
     *,
-    metadata: dict | None = None,
-    plan: dict | None = None,
-    tally: dict | None = None,
-    judgments: list | None = None,
-    results: dict | None = None,
+    metadata: dict[str, Any] | None = None,
+    plan: dict[str, Any] | None = None,
+    tally: dict[str, Any] | None = None,
+    judgments: list[dict[str, Any]] | None = None,
+    results: dict[str, Any] | None = None,
 ) -> Snapshot:
     return Snapshot(
         metadata=metadata or {},

@@ -65,7 +65,6 @@ def validate_execution_coverage(
         terminal_keys=terminal_keys,
         missing_keys=missing,
         extra_keys=extra,
-        duplicate_keys=[],
     )
 
 

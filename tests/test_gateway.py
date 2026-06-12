@@ -581,7 +581,7 @@ def test_live_gateway_generate_text_round_trip() -> None:
 
     from benchdeck.openai_gateway import GatewayConfig, OpenAIGateway
 
-    gateway = OpenAIGateway(GatewayConfig(model="gpt-4o-mini", max_retries=2, timeout=30.0))
+    gateway = OpenAIGateway(GatewayConfig(model="gpt-4o-mini", max_retries=2, timeout_s=30.0))
     result = gateway.generate(
         instructions="You are a helpful assistant. Reply with exactly one word.",
         input_text="Say 'hello' in French.",
@@ -604,7 +604,7 @@ def test_live_gateway_generate_json_round_trip() -> None:
 
     from benchdeck.openai_gateway import GatewayConfig, OpenAIGateway
 
-    gateway = OpenAIGateway(GatewayConfig(model="gpt-4o-mini", max_retries=2, timeout=30.0))
+    gateway = OpenAIGateway(GatewayConfig(model="gpt-4o-mini", max_retries=2, timeout_s=30.0))
     result = gateway.generate_json(
         instructions="Return JSON only.",
         input_text='Return: {"word": "bonjour"}',

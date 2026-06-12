@@ -15,7 +15,7 @@
 - [x] Mark incomplete required coverage as inconclusive.
 - [x] Support one concrete simulated clarification reply.
 - [x] Include a frozen-plan execution path.
-- [ ] Add multi-judge aggregation and disagreement reporting.
+- [x] Add multi-judge aggregation and disagreement reporting.
 - [x] Add deterministic JSON Schema validation of agent final manifests.
 
 ## P2 — TUI
@@ -25,7 +25,7 @@
 - [x] Live artifact refresh.
 - [x] Overview, case list, case detail, and help screens. (BUG-1 and BUG-2 resolved — TUI uses correct RunMetadata field names and per-agent judgment lists. Infrastructure error display added.)
 - [x] Planner capture diagnostics in TUI overview and `benchdeck inspect`.
-- [ ] Launch/pause/cancel subprocess runs from inside the TUI.
+- [x] Launch/pause/cancel subprocess runs from inside the TUI.
 - [x] Export selected case as Markdown.
 
 ## P3 — Distribution

@@ -13,11 +13,10 @@ class CoverageReport(BaseModel):
     terminal_keys: set[ExecutionKey] = Field(default_factory=set)
     missing_keys: set[ExecutionKey] = Field(default_factory=set)
     extra_keys: set[ExecutionKey] = Field(default_factory=set)
-    duplicate_keys: list[ExecutionKey] = Field(default_factory=list)
 
     @property
     def is_complete(self) -> bool:
-        return not self.missing_keys and not self.extra_keys and not self.duplicate_keys
+        return not self.missing_keys and not self.extra_keys
 
     @property
     def diagnostics(self) -> list[str]:
@@ -26,12 +25,10 @@ class CoverageReport(BaseModel):
             diags.append(f"Missing: {_fmt_keys(self.missing_keys)}")
         if self.extra_keys:
             diags.append(f"Extra/unknown: {_fmt_keys(self.extra_keys)}")
-        if self.duplicate_keys:
-            diags.append(f"Duplicate: {_fmt_keys(self.duplicate_keys)}")
         return diags
 
 
-def _fmt_keys(keys: set[ExecutionKey] | list[ExecutionKey]) -> str:
+def _fmt_keys(keys: set[ExecutionKey]) -> str:
     return ", ".join(
         f"({k.agent_label}, {k.case_id})"
         for k in sorted(keys, key=lambda x: (x.agent_label, x.case_id))
