@@ -1,7 +1,7 @@
 # BenchDeck — Remaining Issues (Post-Phase-1 Audit)
 
 **Date:** 2026-06-11
-**Baseline:** 161 tests pass · ruff clean · ruff format clean · mypy clean (with `--ignore-missing-imports`)
+**Baseline:** 187 tests pass · ruff clean · ruff format clean · mypy clean (with `--ignore-missing-imports`)
 **Status:** Phase 1 bug fixes complete. 0 critical bugs remain. Known limitations below.
 
 ---
@@ -60,4 +60,4 @@ python -m mypy --no-incremental src/benchdeck --ignore-missing-imports
 python -m pytest -q
 ```
 
-Expected: all clean, 161 tests passed.
+Expected: all clean, 187 tests passed.

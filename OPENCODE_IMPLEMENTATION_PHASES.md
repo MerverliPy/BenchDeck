@@ -38,7 +38,7 @@ pytest --cov=benchdeck --cov-branch --cov-report=term-missing
 python -m build
 
 KNOWN BASELINE (updated 2026-06-11)
-- 161 tests pass across gateway, runner, models, prompts, reporting, scoring, storage, TUI, and loader.
+- 187 tests pass across gateway, runner, models, prompts, reporting, scoring, storage, TUI, and loader.
 - ruff check, ruff format --check, and mypy (with --ignore-missing-imports) all pass clean.
 - All known bugs from original and Phase 1 audit resolved. See REMAINING_ISSUES.md for remaining limitations.
 - P1 items not yet implemented: multi-judge aggregation, JSON Schema manifest validation.

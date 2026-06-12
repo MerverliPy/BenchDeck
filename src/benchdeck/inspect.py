@@ -90,11 +90,38 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         )
         warnings.append(f"Infrastructure error: {meta}")
 
+    pc = snapshot.planner_capture or {}
+    if pc:
+        if pc.get("terminal_error"):
+            err = pc["terminal_error"]
+            if isinstance(err, dict):
+                warnings.append(
+                    f"Planner terminal error: {err.get('message', str(err))}"
+                    f" (category: {err.get('category', '?')})"
+                )
+            else:
+                warnings.append(f"Planner terminal error: {err}")
+        if pc.get("parse_error"):
+            warnings.append(f"Planner parse error: {pc['parse_error']}")
+        if pc.get("validation_error"):
+            warnings.append(f"Planner validation error: {pc['validation_error']}")
+        plan_mode = snapshot.plan.get("mode")
+        planner_mode = (pc.get("value") or {}).get("mode")
+        if plan_mode and planner_mode and plan_mode != planner_mode:
+            warnings.append(
+                f"Planner mode mismatch: plan declares {plan_mode!r}"
+                f" but planner returned {planner_mode!r}"
+            )
+
     return {
         "run_dir": str(run_dir),
         "status": metadata.get("status", "unknown"),
         "planned_cases": planned,
         "judged_cases": judged,
         "policy_blocks": len(snapshot.policy_blocks),
+        "planner_mode": (pc.get("value") or {}).get("mode"),
+        "planner_attempts": len(pc.get("attempts", [])),
+        "planner_http_attempts": pc.get("total_http_attempts", 0),
+        "planner_error": bool(pc.get("terminal_error") or pc.get("parse_error")),
         "warnings": warnings,
     }

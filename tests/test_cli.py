@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -166,3 +168,12 @@ def test_main_print_help() -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["--help"])
     assert exc_info.value.code == 0
+
+
+def test_python_m_benchdeck_help() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "benchdeck", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0

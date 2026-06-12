@@ -200,7 +200,7 @@ The [CHANGELOG](./CHANGELOG.md#known-issues) lists known issues for the current 
 ruff check .                              # lint
 ruff format --check .                     # formatting
 mypy src/benchdeck/ --ignore-missing-imports  # type checking (strict requires types-jsonschema)
-pytest                                    # 161 tests (offline — no live API calls)
+pytest                                    # 187 tests (offline — no live API calls)
 ```
 
 Or use the Makefile:

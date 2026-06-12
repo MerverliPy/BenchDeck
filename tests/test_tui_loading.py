@@ -395,3 +395,78 @@ def test_load_snapshot_direct_subdir_still_works(tmp_path: Path) -> None:
 
     snapshot = load_snapshot(run_dir)
     assert snapshot.metadata["status"] == "running"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TUI overview shows planner capture diagnostics
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_tui_overview_shows_planner_info() -> None:
+    tui = BenchDeckTUI(Path("/tmp/nonexistent_tui4"))
+    tui.snapshot = Snapshot(
+        metadata={"cases_in_plan": 8, "executions_judged": 8},
+        tally={
+            "agent_a": {
+                "cases_planned": 8,
+                "cases_judged": 8,
+                "score_scale": {"Excellent": 4},
+            }
+        },
+        planner_capture={
+            "value": {"mode": "single"},
+            "total_http_attempts": 2,
+            "attempts": [
+                {"usage": {"input_tokens": 100, "output_tokens": 50}},
+                {"usage": {"input_tokens": 200, "output_tokens": 75}},
+            ],
+        },
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "Planner: single mode" in text
+    assert "2 HTTP attempts" in text
+    assert "425 tokens" in text
+
+
+def test_tui_overview_shows_planner_terminal_error() -> None:
+    tui = BenchDeckTUI(Path("/tmp/nonexistent_tui5"))
+    tui.snapshot = Snapshot(
+        metadata={"cases_in_plan": 8, "executions_judged": 8},
+        tally={},
+        planner_capture={
+            "terminal_error": {
+                "message": "API authentication failed",
+                "category": "auth_error",
+            },
+        },
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "WARNING: planner terminal error" in text
+    assert "API authentication failed" in text
+
+
+def test_tui_overview_shows_planner_parse_error() -> None:
+    tui = BenchDeckTUI(Path("/tmp/nonexistent_tui6"))
+    tui.snapshot = Snapshot(
+        metadata={"cases_in_plan": 8, "executions_judged": 8},
+        tally={},
+        planner_capture={"parse_error": "Bad JSON in response"},
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "WARNING: planner parse error" in text
+    assert "Bad JSON in response" in text
+
+
+def test_tui_overview_no_planner_line_when_empty() -> None:
+    tui = BenchDeckTUI(Path("/tmp/nonexistent_tui7"))
+    tui.snapshot = Snapshot(
+        metadata={"cases_in_plan": 8, "executions_judged": 8},
+        tally={},
+        planner_capture={},
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "Planner:" not in text

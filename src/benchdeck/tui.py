@@ -123,8 +123,24 @@ class BenchDeckTUI:
             f"Progress [{bar}] {judged}/{planned}",
             f"Policy blocks: {blocks}   Infra failures: {infra}",
             f"Requests: {usage.get('requests', 0)}   Tokens: {usage.get('total_tokens', 0):,}",
-            "",
         ]
+        pc = self.snapshot.planner_capture or {}
+        if pc:
+            value = pc.get("value") or {}
+            mode = value.get("mode", "?")
+            pc_attempts = pc.get("attempts", [])
+            total_in = sum(a.get("usage", {}).get("input_tokens", 0) for a in pc_attempts)
+            total_out = sum(a.get("usage", {}).get("output_tokens", 0) for a in pc_attempts)
+            pc_tokens = total_in + total_out
+            http_attempts = pc.get("total_http_attempts", 0)
+            lines.append(f"Planner: {mode} mode, {http_attempts} HTTP attempts, {pc_tokens} tokens")
+            if pc.get("terminal_error"):
+                err = pc["terminal_error"]
+                msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                lines.append(f"  WARNING: planner terminal error: {msg}")
+            if pc.get("parse_error"):
+                lines.append(f"  WARNING: planner parse error: {pc['parse_error']}")
+        lines.append("")
         if not agents:
             return lines + ["No tally data yet."]
         if len(agents) == 1:
