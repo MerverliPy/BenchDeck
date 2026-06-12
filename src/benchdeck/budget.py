@@ -104,9 +104,7 @@ class BudgetTracker:
             and self.total_output_tokens > self.limits.max_total_output_tokens
         ):
             max_out = self.limits.max_total_output_tokens
-            reasons.append(
-                f"output tokens ({self.total_output_tokens} > {max_out})"
-            )
+            reasons.append(f"output tokens ({self.total_output_tokens} > {max_out})")
         if reasons:
             self.exhausted = True
             self.exhausted_reason = "Budget exhausted: " + "; ".join(reasons)

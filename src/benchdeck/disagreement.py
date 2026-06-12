@@ -37,10 +37,7 @@ def analyze_disagreement(
         dim_variances: dict[str, float] = {}
         for dim in REQUIRED_RUBRIC_DIMENSIONS:
             scores = [
-                d.rating.score
-                for jj in group
-                for d in jj.rubric.dimensions
-                if d.dimension == dim
+                d.rating.score for jj in group for d in jj.rubric.dimensions if d.dimension == dim
             ]
             if len(scores) >= 2:
                 mean = sum(scores) / len(scores)

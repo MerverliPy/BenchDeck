@@ -51,37 +51,52 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--model", default=None)
     run.add_argument(
-        "--planner-model", default=None,
+        "--planner-model",
+        default=None,
         help="Model for plan generation (defaults to --model)",
     )
     run.add_argument("--judge-model", default=None)
+    run.add_argument("--timeout", type=float, default=None, help="API timeout in seconds")
     run.add_argument(
-        "--timeout", type=float, default=None, help="API timeout in seconds"
-    )
-    run.add_argument(
-        "--max-retries", type=int, default=None,
+        "--max-retries",
+        type=int,
+        default=None,
         help="Maximum retry attempts per call",
     )
     run.add_argument(
-        "--max-output-tokens-planner", type=int, default=None,
+        "--max-output-tokens-planner",
+        type=int,
+        default=None,
     )
     run.add_argument(
-        "--max-output-tokens-agent", type=int, default=None,
+        "--max-output-tokens-agent",
+        type=int,
+        default=None,
     )
     run.add_argument(
-        "--max-output-tokens-judge", type=int, default=None,
+        "--max-output-tokens-judge",
+        type=int,
+        default=None,
     )
     run.add_argument(
-        "--max-logical-requests", type=int, default=None,
+        "--max-logical-requests",
+        type=int,
+        default=None,
     )
     run.add_argument(
-        "--max-http-attempts", type=int, default=None,
+        "--max-http-attempts",
+        type=int,
+        default=None,
     )
     run.add_argument(
-        "--max-total-input-tokens", type=int, default=None,
+        "--max-total-input-tokens",
+        type=int,
+        default=None,
     )
     run.add_argument(
-        "--max-total-output-tokens", type=int, default=None,
+        "--max-total-output-tokens",
+        type=int,
+        default=None,
     )
     run.add_argument(
         "--capture-level",
@@ -89,7 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     run.add_argument(
-        "--judges", type=int, default=1,
+        "--judges",
+        type=int,
+        default=1,
         help="Number of independent judge calls per case (default: 1)",
     )
     run.add_argument(
@@ -141,22 +158,23 @@ def main(argv: list[str] | None = None) -> int:
         judge_model = args.judge_model or cfg.get("judge_model") or model
         timeout = args.timeout if args.timeout is not None else cfg.get("timeout")
         max_retries = args.max_retries if args.max_retries is not None else cfg.get("max_retries")
-        budget = BudgetLimits.from_dict({
-            "max_output_tokens_planner": args.max_output_tokens_planner
-            or cfg.get("max_output_tokens_planner"),
-            "max_output_tokens_agent": args.max_output_tokens_agent
-            or cfg.get("max_output_tokens_agent"),
-            "max_output_tokens_judge": args.max_output_tokens_judge
-            or cfg.get("max_output_tokens_judge"),
-            "max_logical_requests": args.max_logical_requests
-            or cfg.get("max_logical_requests"),
-            "max_http_attempts": args.max_http_attempts
-            or cfg.get("max_http_attempts"),
-            "max_total_input_tokens": args.max_total_input_tokens
-            or cfg.get("max_total_input_tokens"),
-            "max_total_output_tokens": args.max_total_output_tokens
-            or cfg.get("max_total_output_tokens"),
-        })
+        budget = BudgetLimits.from_dict(
+            {
+                "max_output_tokens_planner": args.max_output_tokens_planner
+                or cfg.get("max_output_tokens_planner"),
+                "max_output_tokens_agent": args.max_output_tokens_agent
+                or cfg.get("max_output_tokens_agent"),
+                "max_output_tokens_judge": args.max_output_tokens_judge
+                or cfg.get("max_output_tokens_judge"),
+                "max_logical_requests": args.max_logical_requests
+                or cfg.get("max_logical_requests"),
+                "max_http_attempts": args.max_http_attempts or cfg.get("max_http_attempts"),
+                "max_total_input_tokens": args.max_total_input_tokens
+                or cfg.get("max_total_input_tokens"),
+                "max_total_output_tokens": args.max_total_output_tokens
+                or cfg.get("max_total_output_tokens"),
+            }
+        )
 
         runner = BenchmarkRunner(
             agent_a_path=args.agent_a,

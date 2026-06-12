@@ -17,8 +17,17 @@ from benchdeck.cli import build_parser, main
 def test_build_parser_run_subcommand() -> None:
     parser = build_parser()
     args = parser.parse_args(
-        ["run", "--agent-a", "/tmp/agent.md", "--model", "gpt-4o", "--judge-model", "gpt-4.1",
-         "--output-dir", "/tmp/out"]
+        [
+            "run",
+            "--agent-a",
+            "/tmp/agent.md",
+            "--model",
+            "gpt-4o",
+            "--judge-model",
+            "gpt-4.1",
+            "--output-dir",
+            "/tmp/out",
+        ]
     )
     assert args.command == "run"
     assert args.agent_a == Path("/tmp/agent.md")
@@ -39,9 +48,7 @@ def test_build_parser_run_default_model() -> None:
 
 def test_build_parser_run_planner_model() -> None:
     parser = build_parser()
-    args = parser.parse_args(
-        ["run", "--agent-a", "/tmp/agent.md", "--planner-model", "gpt-4o"]
-    )
+    args = parser.parse_args(["run", "--agent-a", "/tmp/agent.md", "--planner-model", "gpt-4o"])
     assert args.planner_model == "gpt-4o"
 
 

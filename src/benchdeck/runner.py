@@ -86,7 +86,9 @@ class BenchmarkRunner:
         )
         self.judge_gateway = judge_gateway or OpenAIGateway(
             GatewayConfig(
-                model=judge_model, timeout_s=_gw_timeout, max_retries=_gw_retries,
+                model=judge_model,
+                timeout_s=_gw_timeout,
+                max_retries=_gw_retries,
                 use_structured_output=True,
             )
         )
@@ -131,9 +133,9 @@ class BenchmarkRunner:
         lock_path = self.output_dir / "run.lock"
         if lock_path.exists():
             try:
-                stale_ms = (datetime.now(UTC) - datetime.fromtimestamp(
-                    lock_path.stat().st_mtime, tz=UTC
-                )).total_seconds() * 1000
+                stale_ms = (
+                    datetime.now(UTC) - datetime.fromtimestamp(lock_path.stat().st_mtime, tz=UTC)
+                ).total_seconds() * 1000
                 if stale_ms < 600_000:
                     pid = lock_path.read_text().strip()
                     raise RuntimeError(
@@ -243,9 +245,7 @@ class BenchmarkRunner:
             logger.info("Plan loaded: %d cases across %d agents", len(plan.cases), len(labels))
 
             # Preflight budget check
-            budget_warnings = preflight_check(
-                self.budget.limits, len(plan.cases), len(labels)
-            )
+            budget_warnings = preflight_check(self.budget.limits, len(plan.cases), len(labels))
             for w in budget_warnings:
                 logger.warning("Budget preflight: %s", w)
 
@@ -388,9 +388,7 @@ class BenchmarkRunner:
                 "budget_tracker.json",
                 {
                     "limits": {
-                        k: v
-                        for k, v in self.budget.limits.__dict__.items()
-                        if v is not None
+                        k: v for k, v in self.budget.limits.__dict__.items() if v is not None
                     },
                     "logical_calls": self.budget.logical_calls,
                     "http_attempts": self.budget.http_attempts,
@@ -435,9 +433,7 @@ class BenchmarkRunner:
         if self.plan_path:
             return BenchmarkPlan.model_validate_json(self.plan_path.read_text(encoding="utf-8"))
         if self.budget.exhausted:
-            raise RuntimeError(
-                f"Budget exhausted before planner: {self.budget.exhausted_reason}"
-            )
+            raise RuntimeError(f"Budget exhausted before planner: {self.budget.exhausted_reason}")
         if self._planner_gateway_user is not None:
             planner = self._planner_gateway_user
         else:
@@ -578,7 +574,9 @@ class BenchmarkRunner:
         if self.budget.exhausted:
             logger.warning(
                 "Case %d (%s) — skipped judge %d: budget exhausted",
-                case.id, agent_label, judge_idx,
+                case.id,
+                agent_label,
+                judge_idx,
             )
             return None, InfrastructureError(
                 case_id=case.id,
@@ -601,12 +599,17 @@ class BenchmarkRunner:
         _add_usage_from_result(self.metadata, gen_result)
         capture = _result_to_capture(gen_result)
         if gen_result.value is None:
-            err_msg = gen_result.terminal_error.message if gen_result.terminal_error else (
-                gen_result.parse_error or "Unknown judge failure"
+            err_msg = (
+                gen_result.terminal_error.message
+                if gen_result.terminal_error
+                else (gen_result.parse_error or "Unknown judge failure")
             )
             logger.error(
                 "Case %d (%s) judge %d — failed: %s",
-                case.id, agent_label, judge_idx, err_msg,
+                case.id,
+                agent_label,
+                judge_idx,
+                err_msg,
             )
             return None, InfrastructureError(
                 case_id=case.id,
@@ -695,11 +698,7 @@ def _dir_has_artifacts(directory: Path) -> bool:
         return False
     if (directory / "run_metadata.json").exists():
         return True
-    return any(
-        (d / "run_metadata.json").exists()
-        for d in directory.iterdir()
-        if d.is_dir()
-    )
+    return any((d / "run_metadata.json").exists() for d in directory.iterdir() if d.is_dir())
 
 
 def _result_to_capture(result: GenerationResult[Any]) -> ResponseCapture:

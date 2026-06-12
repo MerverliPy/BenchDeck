@@ -164,8 +164,7 @@ class BenchDeckTUI:
             manifest_issues = manifest.verify()
             if manifest_issues:
                 lines.append(
-                    f"Manifest gen {gen}: WARNING — "
-                    f"{len(manifest_issues)} integrity issue(s)"
+                    f"Manifest gen {gen}: WARNING — {len(manifest_issues)} integrity issue(s)"
                 )
             else:
                 lines.append(f"Manifest gen {gen}: valid")
@@ -269,8 +268,7 @@ class BenchDeckTUI:
                 lines.append("")
                 lines.append("Judge disagreement detected:")
                 for r in sorted(ratings):
-                    count = sum(1 for j in case_judgments
-                                if j.get("overall_rating") == r)
+                    count = sum(1 for j in case_judgments if j.get("overall_rating") == r)
                     lines.append(f"  {r}: {count} judge(s)")
 
         case_infra = [
@@ -399,9 +397,14 @@ class BenchDeckTUI:
         ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
         run_dir = base_dir / ts
         cmd = [
-            "python", "-m", "benchdeck", "run",
-            "--agent-a", str(Path("examples/repository-integrity-agent.md")),
-            "--output-dir", str(run_dir.parent),
+            "python",
+            "-m",
+            "benchdeck",
+            "run",
+            "--agent-a",
+            str(Path("examples/repository-integrity-agent.md")),
+            "--output-dir",
+            str(run_dir.parent),
         ]
         try:
             self._proc = _sp.Popen(

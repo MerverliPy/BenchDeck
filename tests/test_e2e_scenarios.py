@@ -42,8 +42,7 @@ def _valid_judgment_json() -> dict[str, Any]:
         "case_verdict": "Adequate",
         "gate_check": {"status": "Pass", "reason": "No hard-fail conditions triggered"},
         "rubric_dimensions": [
-            {"dimension": d, "rating": "Strong", "evidence": "",
-             "strengths": [], "weaknesses": []}
+            {"dimension": d, "rating": "Strong", "evidence": "", "strengths": [], "weaknesses": []}
             for d in _m.REQUIRED_RUBRIC_DIMENSIONS
         ],
         "overall_rating": "Strong",
@@ -199,10 +198,12 @@ def test_e2e_timeout_then_success(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent.md"
     agent_path.write_text("# Test agent\n")
 
-    retry_script = CallScript(attempts=[
-        error_attempt("timeout", "Timed out", http_status=408, retryable=True),
-        AttemptScript(output_text="OK at last", input_tokens=10, output_tokens=20),
-    ])
+    retry_script = CallScript(
+        attempts=[
+            error_attempt("timeout", "Timed out", http_status=408, retryable=True),
+            AttemptScript(output_text="OK at last", input_tokens=10, output_tokens=20),
+        ]
+    )
     agent_scripts = [retry_script] + [text_response("OK") for _ in range(7)]
     judge_scripts = [json_response(_valid_judgment_json()) for _ in plan.cases]
 
@@ -349,6 +350,7 @@ def test_e2e_multi_judge_aggregation(tmp_path: Path) -> None:
 
     # Verify disagreement analysis
     from benchdeck.disagreement import analyze_disagreement
+
     results_json = json.loads((runner.output_dir / "case_judgments.json").read_text())
     judgments = [_m.CaseJudgment.model_validate(j) for j in results_json]
     report = analyze_disagreement(judgments)
@@ -385,7 +387,10 @@ def test_e2e_budget_exhaustion(tmp_path: Path) -> None:
     )
     status = runner.run()
     assert status.value in (
-        "inconclusive", "completed_with_failures", "infrastructure_failed", "completed"
+        "inconclusive",
+        "completed_with_failures",
+        "infrastructure_failed",
+        "completed",
     )
 
 

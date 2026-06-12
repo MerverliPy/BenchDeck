@@ -45,9 +45,7 @@ class Manifest:
     def _flush(self) -> None:
         manifest = {
             "generation": self._generation,
-            "entries": {
-                name: entry.to_dict() for name, entry in self._entries.items()
-            },
+            "entries": {name: entry.to_dict() for name, entry in self._entries.items()},
         }
         text = json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
         target = self.root / "manifest.json"
@@ -79,8 +77,7 @@ class Manifest:
             actual_size = len(data)
             if actual_size != entry.byte_size:
                 issues.append(
-                    f"{filename}: size mismatch "
-                    f"(expected {entry.byte_size}, got {actual_size})"
+                    f"{filename}: size mismatch (expected {entry.byte_size}, got {actual_size})"
                 )
         return issues
 
@@ -107,16 +104,12 @@ class Manifest:
     def to_dict(self) -> dict[str, Any]:
         return {
             "generation": self._generation,
-            "entries": {
-                name: entry.to_dict() for name, entry in self._entries.items()
-            },
+            "entries": {name: entry.to_dict() for name, entry in self._entries.items()},
         }
 
 
 class _ManifestEntry:
-    def __init__(
-        self, filename: str, sha256: str, byte_size: int, generation: int
-    ) -> None:
+    def __init__(self, filename: str, sha256: str, byte_size: int, generation: int) -> None:
         self.filename = filename
         self.sha256 = sha256
         self.byte_size = byte_size
