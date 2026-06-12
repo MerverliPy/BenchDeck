@@ -1,10 +1,4 @@
 ---
-
-
-
-
-⸻
-
 description: Precision TUI inspection, interaction design, responsive optimization, implementation, and validation for desktop terminals, SSH environments, and Termius on iPhone.
 mode: all
 temperature: 0.2
