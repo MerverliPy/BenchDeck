@@ -467,3 +467,65 @@ class TestRunMetadata:
         meta = RunMetadata()
         assert meta.schema_version == "2.0"
         assert meta.run_id != ""
+
+
+_FROZEN_FAMILIES = ["happy_path", "regression_protection", "stress_adversarial", "ambiguity"]
+
+
+def _case_dict(case_id: int, family: str) -> dict[str, object]:
+    return {
+        "id": case_id,
+        "title": f"Case {case_id}",
+        "family": family,
+        "purpose": "Test purpose",
+        "test_prompt": f"Test prompt {case_id}",
+        "hard_fail_conditions": ["condition"],
+    }
+
+
+def test_frozen_plan_allows_custom_case_count() -> None:
+    """Frozen plans from --plan should not enforce the 8-12 case count."""
+    plan = BenchmarkPlan.model_validate(
+        {
+            "mode": "single",
+            "profile": {"agent_name_a": "Test", "inferred_mission": "x"},
+            "provenance": {
+                "source": "frozen",
+                "plan_sha256": "abc123",
+                "generated_at": "2025-01-01T00:00:00Z",
+            },
+            "cases": [_case_dict(i, _FROZEN_FAMILIES[(i - 1) % 4]) for i in range(1, 6)],
+        }
+    )
+    assert len(plan.cases) == 5
+
+
+def test_frozen_plan_allows_large_case_count() -> None:
+    """Frozen plans from --plan should not reject >12 cases."""
+    plan = BenchmarkPlan.model_validate(
+        {
+            "mode": "single",
+            "profile": {"agent_name_a": "Test", "inferred_mission": "x"},
+            "provenance": {
+                "source": "frozen",
+                "plan_sha256": "abc123",
+                "generated_at": "2025-01-01T00:00:00Z",
+            },
+            "cases": [_case_dict(i, _FROZEN_FAMILIES[(i - 1) % 4]) for i in range(1, 16)],
+        }
+    )
+    assert len(plan.cases) == 15
+
+
+def test_generated_plan_still_rejects_too_few_cases() -> None:
+    """Generated plans (no frozen provenance) still enforce 8-12 count."""
+    import pytest
+
+    with pytest.raises(ValueError, match="8–12"):
+        BenchmarkPlan.model_validate(
+            {
+                "mode": "single",
+                "profile": {"agent_name_a": "Test", "inferred_mission": "x"},
+                "cases": [_case_dict(i, _FROZEN_FAMILIES[(i - 1) % 4]) for i in range(1, 5)],
+            }
+        )

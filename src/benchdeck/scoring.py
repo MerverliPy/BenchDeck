@@ -60,20 +60,12 @@ def validate_execution_coverage(
 ) -> CoverageReport:
     missing = expected - terminal_keys
     extra = terminal_keys - expected
-    seen: dict[ExecutionKey, int] = {}
-    duplicates: list[ExecutionKey] = []
-    for key in terminal_keys:
-        if key not in seen:
-            seen[key] = 0
-        seen[key] += 1
-        if seen[key] == 2:
-            duplicates.append(key)
     return CoverageReport(
         expected_keys=expected,
         terminal_keys=terminal_keys,
         missing_keys=missing,
         extra_keys=extra,
-        duplicate_keys=duplicates,
+        duplicate_keys=[],
     )
 
 

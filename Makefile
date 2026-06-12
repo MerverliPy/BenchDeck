@@ -3,7 +3,7 @@ install:
 	python -m pip install -e '.[dev]'
 
 test:
-	pytest
+	pytest --cov=src/benchdeck --cov-report=term-missing
 
 lint:
 	ruff check .

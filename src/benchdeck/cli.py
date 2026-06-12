@@ -37,10 +37,20 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--agent-a", type=Path, required=True)
     run.add_argument("--agent-b", type=Path)
     run.add_argument("--plan", type=Path, help="Use a pre-generated benchmark plan")
-    run.add_argument("--output-dir", type=Path, default=Path("benchmark_out"))
+    run.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("benchmark_out"),
+        help="Parent directory where timestamped run subdirectories accumulate",
+    )
     run.add_argument("--model", default="gpt-4o-mini")
     run.add_argument("--judge-model", default="gpt-4o-mini")
-    run.add_argument("--overwrite", action="store_true", help="Overwrite an existing run directory")
+    run.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite if a prior run exists at the exact output path (rarely needed; "
+        "--output-dir is a parent accumulation directory)",
+    )
 
     tui = sub.add_parser("tui", help="Open the live terminal dashboard")
     tui.add_argument("run_dir", type=Path)

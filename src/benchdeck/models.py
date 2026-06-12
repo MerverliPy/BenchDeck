@@ -162,7 +162,9 @@ class BenchmarkPlan(BaseModel):
             seen.add(case.id)
 
         # ── 8–12 cases for generated plans ──
-        if len(self.cases) < _CASE_COUNT_MIN or len(self.cases) > _CASE_COUNT_MAX:
+        if self.provenance and self.provenance.source == "frozen":
+            pass  # skip case-count constraint for frozen plans
+        elif len(self.cases) < _CASE_COUNT_MIN or len(self.cases) > _CASE_COUNT_MAX:
             raise ValueError(
                 f"Plan must contain {_CASE_COUNT_MIN}–{_CASE_COUNT_MAX} cases, "
                 f"got {len(self.cases)}"

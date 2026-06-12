@@ -565,3 +565,52 @@ def test_generation_result_not_succeeded_on_error() -> None:
 def test_generation_result_not_succeeded_on_parse_error() -> None:
     result: GenerationResult[Any] = GenerationResult(parse_error="bad JSON")
     assert result.succeeded is False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Live API integration tests (requires OPENAI_API_KEY)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.xfail(reason="Requires OPENAI_API_KEY environment variable")
+def test_live_gateway_generate_text_round_trip() -> None:
+    import os
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
+
+    from benchdeck.openai_gateway import GatewayConfig, OpenAIGateway
+
+    gateway = OpenAIGateway(GatewayConfig(model="gpt-4o-mini", max_retries=2, timeout=30.0))
+    result = gateway.generate(
+        instructions="You are a helpful assistant. Reply with exactly one word.",
+        input_text="Say 'hello' in French.",
+    )
+    assert result.succeeded
+    assert result.value is not None
+    assert len(result.value) > 0
+    assert result.total_http_attempts >= 1
+    assert len(result.attempts) >= 1
+    assert result.attempts[0].usage.input_tokens > 0
+    assert result.attempts[0].usage.output_tokens > 0
+
+
+@pytest.mark.xfail(reason="Requires OPENAI_API_KEY environment variable")
+def test_live_gateway_generate_json_round_trip() -> None:
+    import os
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
+
+    from benchdeck.openai_gateway import GatewayConfig, OpenAIGateway
+
+    gateway = OpenAIGateway(GatewayConfig(model="gpt-4o-mini", max_retries=2, timeout=30.0))
+    result = gateway.generate_json(
+        instructions="Return JSON only.",
+        input_text='Return: {"word": "bonjour"}',
+    )
+    assert result.succeeded
+    assert isinstance(result.value, dict)
+    assert "word" in result.value
+    assert result.value["word"] == "bonjour"
+    assert result.total_http_attempts >= 1

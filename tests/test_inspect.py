@@ -92,3 +92,11 @@ def test_inspect_planner_no_error_when_empty(monkeypatch) -> None:
     assert report["planner_error"] is False
     planner_warnings = [w for w in report["warnings"] if "Planner" in w]
     assert len(planner_warnings) == 0
+
+
+def test_load_schema_returns_non_none() -> None:
+    from benchdeck.inspect import _load_schema
+
+    schema = _load_schema("summary_tally.schema.json")
+    assert isinstance(schema, dict)
+    assert "properties" in schema

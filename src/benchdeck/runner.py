@@ -84,7 +84,6 @@ class BenchmarkRunner:
                 f"Use --overwrite to replace, or point to a parent directory."
             )
         self.store = ArtifactStore(self.output_dir)
-        self._shutdown = False
 
     @property
     def agent_labels(self) -> list[str]:

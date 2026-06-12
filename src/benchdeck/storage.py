@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime as _dt
 import json
 import os
 import tempfile
@@ -20,6 +21,14 @@ def _serialize(value: Any) -> Any:
     return value
 
 
+def _json_default(obj: Any) -> Any:
+    if isinstance(obj, (_dt.datetime, _dt.date)):
+        return obj.isoformat()
+    if isinstance(obj, (set, frozenset)):
+        return sorted(str(v) for v in obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 class ArtifactStore:
     """Atomic JSON/text artifact writer safe for a concurrently watching TUI."""
 
@@ -29,7 +38,8 @@ class ArtifactStore:
 
     def write_json(self, name: str, value: BaseModel | dict[str, Any] | list[Any]) -> Path:
         payload = _serialize(value)
-        return self._atomic_write(name, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        text = json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default) + "\n"
+        return self._atomic_write(name, text)
 
     def write_text(self, name: str, text: str) -> Path:
         return self._atomic_write(name, text.rstrip() + "\n")

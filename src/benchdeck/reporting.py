@@ -43,7 +43,10 @@ def build_per_agent_verdict(
     if tally.gate_failures > 0:
         reasons.append(f"{tally.gate_failures} gate failure(s)")
     if not required_families_pass:
-        reasons.append("Required family threshold not met (at least 3.0 needed per family)")
+        failing = [f for f, v in family_scores.items() if float(v) < 3.0]
+        reasons.append(
+            f"Required family threshold not met (score < 3.0) for: {', '.join(sorted(failing))}"
+        )
     if tally.policy_blocks > 0:
         reasons.append(f"{tally.policy_blocks} policy block(s) excluded from scoring")
     if tally.infrastructure_failures > 0:

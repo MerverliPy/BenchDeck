@@ -24,6 +24,7 @@ class BenchDeckTUI:
         self.scroll = 0
         self.snapshot = Snapshot()
         self.last_load = 0.0
+        self._status_msg = ""
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -92,8 +93,8 @@ class BenchDeckTUI:
         viewport = lines[self.scroll : self.scroll + height - 4]
         for row, line in enumerate(viewport, start=2):
             self._safe_add(stdscr, row, 0, line, width)
-        footer = "h/l tabs  j/k move  Enter detail  e export  r reload  q quit"
-        self._safe_add(stdscr, height - 1, 0, footer, width, curses.A_REVERSE)
+        status = self._status_msg or "h/l tabs  j/k move  Enter detail  e export  r reload  q quit"
+        self._safe_add(stdscr, height - 1, 0, status, width, curses.A_REVERSE)
         stdscr.refresh()
 
     def _render(self, width: int) -> list[str]:
@@ -289,7 +290,7 @@ class BenchDeckTUI:
         case_id = case.get("id", "unknown")
         case_judgments = [j for j in self.snapshot.judgments if j.get("case_id") == case_id]
         ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
-        filename = f"case_{case_id}_{ts}.md"
+        filename = str(self.run_dir / f"case_{case_id}_{ts}.md")
         lines = [
             f"# Case {case_id}: {case.get('title', 'Untitled')}",
             "",
@@ -329,8 +330,11 @@ class BenchDeckTUI:
             lines.append(str(result.get("final_output", "")))
             lines.append("```")
             lines.append("")
-        with contextlib.suppress(OSError):
+        try:
             Path(filename).write_text("\n".join(lines), encoding="utf-8")
+            self._status_msg = f"Exported {filename}"
+        except OSError as exc:
+            self._status_msg = f"Export failed: {exc}"
 
     @staticmethod
     def _safe_add(stdscr: Any, row: int, col: int, text: str, width: int, attr: int = 0) -> None:

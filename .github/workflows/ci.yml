@@ -24,5 +24,5 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy src/benchdeck/ --ignore-missing-imports
-      - run: pytest --cov=benchdeck --cov-report=term-missing
+      - run: mypy src/benchdeck/
+      - run: pytest --cov=src/benchdeck --cov-report=term-missing

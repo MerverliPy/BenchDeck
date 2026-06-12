@@ -56,8 +56,8 @@
 ```bash
 ruff check .
 ruff format --check .
-python -m mypy --no-incremental src/benchdeck --ignore-missing-imports
+python -m mypy --no-incremental src/benchdeck
 python -m pytest -q
 ```
 
-Expected: all clean, 187 tests passed.
+Expected: all clean, 192 tests passed.

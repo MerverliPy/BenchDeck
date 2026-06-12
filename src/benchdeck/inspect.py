@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,7 @@ from jsonschema import ValidationError, validate
 
 from .loader import _sum_tally_int, load_snapshot
 
-_SCHEMA_DIR = Path(__file__).parents[2] / "schemas"
+_SCHEMA_DIR = files("benchdeck") / "schemas"
 
 
 def _load_schema(name: str) -> dict[str, Any] | None:
