@@ -1,0 +1,8 @@
+# BenchDeck reproducible dependency pins
+# Generated: 2026-06-11
+# Runtime: pip install -r requirements.txt
+# Dev extras: see pyproject.toml [project.optional-dependencies]
+
+openai==2.41.1
+pydantic==2.13.4
+jsonschema==4.26.0

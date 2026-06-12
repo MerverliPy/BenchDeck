@@ -13,7 +13,7 @@ from conftest import (
 )
 
 from benchdeck.models import RunStatus
-from benchdeck.reporting import build_final_verdict, build_per_agent_verdict, build_run_verdict
+from benchdeck.reporting import build_per_agent_verdict, build_run_verdict, run_verdict_markdown
 from benchdeck.scoring import build_tally, validate_execution_coverage
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -182,26 +182,28 @@ def test_comparison_invalid_with_incomplete_coverage() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Legacy dict verdict (compatibility)
+# Typed markdown verdict
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def test_verdict_validated_when_all_excellent() -> None:
+def test_run_verdict_markdown_includes_per_agent_sections() -> None:
     plan = make_single_plan()
     judgments = [make_judgment(c.id, agent_label="agent_a", rating="Excellent") for c in plan.cases]
     tally = build_tally(plan.cases, judgments, agent_label="agent_a")
-    tally_dict = {
-        "cases_planned": tally.cases_planned,
-        "cases_judged": tally.cases_judged,
-        "rating_counts": tally.rating_counts,
-        "gate_failures": tally.gate_failures,
-        "family_scores": tally.family_scores,
-        "policy_blocks": tally.policy_blocks,
-        "infrastructure_failures": tally.infrastructure_failures,
-        "score_scale": tally.score_scale,
-    }
-    verdict = build_final_verdict(plan, judgments, tally_dict, RunStatus.COMPLETED)
-    assert verdict["overall_verdict"] == "Validated"
+    cov = validate_execution_coverage(
+        plan.all_execution_keys(["agent_a"]),
+        {j.execution_key for j in judgments},
+    )
+    agent_verdict = build_per_agent_verdict(
+        "agent_a", plan, judgments, tally, cov, RunStatus.COMPLETED
+    )
+    run_verdict = build_run_verdict(
+        RunStatus.COMPLETED, {"agent_a": agent_verdict}, plan, judgments
+    )
+    md = run_verdict_markdown(run_verdict, plan)
+    assert "Agent: agent_a" in md
+    assert "**Verdict:** validated" in md
+    assert "Excellent" in md
 
 
 def test_coverage_planned_versus_judged() -> None:

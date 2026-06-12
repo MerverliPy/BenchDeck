@@ -11,6 +11,7 @@ from .models import (
     CoverageReport,
     ExecutionKey,
     Family,
+    GateStatus,
     PolicyBlock,
     Rating,
 )
@@ -43,7 +44,7 @@ def build_tally(
         cases_planned=len(case_by_id),
         cases_judged=len(judgments_list),
         rating_counts={rating.value: counts[rating.value] for rating in Rating},
-        gate_failures=sum(j.gate_check.status.value == "Fail" for j in judgments_list),
+        gate_failures=sum(j.gate_check.status == GateStatus.FAIL for j in judgments_list),
         family_scores=family_scores,
         policy_blocks=policy_blocks,
         infrastructure_failures=infrastructure_failures,

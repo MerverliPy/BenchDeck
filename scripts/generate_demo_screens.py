@@ -10,7 +10,8 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from benchdeck.tui import BenchDeckTUI, Snapshot  # noqa: E402
+from benchdeck.loader import Snapshot  # noqa: E402
+from benchdeck.tui import BenchDeckTUI  # noqa: E402
 
 
 def _ensure_pillow() -> None:

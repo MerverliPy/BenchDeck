@@ -6,7 +6,7 @@ from typing import Any
 
 from jsonschema import ValidationError, validate
 
-from .tui import load_snapshot
+from .loader import load_snapshot
 
 _SCHEMA_DIR = Path(__file__).parents[2] / "schemas"
 

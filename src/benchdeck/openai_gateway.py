@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import openai
 from openai import OpenAI
@@ -18,6 +19,8 @@ from .models import (
 )
 
 T = TypeVar("T")
+
+logger = logging.getLogger("benchdeck.gateway")
 
 # ── project-level timeout constants ───────────────────────────────────────
 
@@ -39,6 +42,16 @@ class GatewayConfig:
     max_output_tokens: int | None = None
     temperature: float | None = None
     extra_headers: dict[str, str] = field(default_factory=dict)
+
+
+@runtime_checkable
+class GatewayProtocol(Protocol):
+    """Protocol for gateway implementations (OpenAIGateway and test fakes)."""
+
+    def generate(self, *, instructions: str, input_text: str) -> GenerationResult[str]: ...
+    def generate_json(
+        self, *, instructions: str, input_text: str
+    ) -> GenerationResult[dict[str, Any]]: ...
 
 
 # ── retry policy ──────────────────────────────────────────────────────────
@@ -435,7 +448,17 @@ class OpenAIGateway:
                 and _is_retryable(last_error.category, last_error.http_status)
             ):
                 delay = _backoff(attempt_no, self.config)
+                logger.debug(
+                    "Retry %d/%d after %.2fs — %s",
+                    attempt_no, self.config.max_retries,
+                    delay, last_error.category.value,
+                )
                 time.sleep(delay)
+
+        logger.warning(
+            "All attempts exhausted — terminal error: %s",
+            last_error.category.value if last_error else "none",
+        )
 
         return GenerationResult(
             attempts=attempts,

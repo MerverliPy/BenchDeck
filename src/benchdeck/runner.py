@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import signal
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -25,13 +27,13 @@ from .models import (
     RunMetadata,
     RunStatus,
 )
-from .openai_gateway import GatewayConfig, OpenAIGateway
+from .openai_gateway import GatewayConfig, GatewayProtocol, OpenAIGateway
 from .prompts import JUDGE_INSTRUCTIONS, PLANNER_INSTRUCTIONS, judge_input, planner_input
 from .reporting import (
     build_per_agent_verdict,
     build_run_verdict,
     case_judgments_markdown,
-    final_verdict_markdown,
+    run_verdict_markdown,
 )
 from .scoring import (
     build_tally,
@@ -39,6 +41,8 @@ from .scoring import (
     validate_execution_coverage,
 )
 from .storage import ArtifactStore
+
+logger = logging.getLogger("benchdeck.runner")
 
 
 class BenchmarkRunner:
@@ -51,9 +55,9 @@ class BenchmarkRunner:
         model: str,
         judge_model: str,
         plan_path: Path | None = None,
-        planner_gateway: Any = None,
-        agent_gateway: Any = None,
-        judge_gateway: Any = None,
+        planner_gateway: GatewayProtocol | None = None,
+        agent_gateway: GatewayProtocol | None = None,
+        judge_gateway: GatewayProtocol | None = None,
     ) -> None:
         self.agent_a_path = agent_a_path
         self.agent_b_path = agent_b_path
@@ -63,6 +67,7 @@ class BenchmarkRunner:
         self.agent_gateway = agent_gateway or OpenAIGateway(GatewayConfig(model=model))
         self.judge_gateway = judge_gateway or OpenAIGateway(GatewayConfig(model=judge_model))
         self.store = ArtifactStore(output_dir)
+        self._shutdown = False
         self.metadata = RunMetadata(
             config={
                 "agent_a": str(agent_a_path),
@@ -80,8 +85,19 @@ class BenchmarkRunner:
             labels.append("agent_b")
         return labels
 
+    def _on_signal(self, signum: int, frame: object) -> None:
+        self._shutdown = True
+
     def run(self) -> RunStatus:
         self.store.write_json("run_metadata.json", self.metadata)
+        logger.info(
+            "Run %s starting — model=%s judge_model=%s agents=%d",
+            self.metadata.run_id,
+            self.metadata.config.get("model", "?"),
+            self.metadata.config.get("judge_model", "?"),
+            len(self.agent_labels),
+        )
+        prev_sigterm = signal.signal(signal.SIGTERM, self._on_signal)
         try:
             agent_a_text = self.agent_a_path.read_text(encoding="utf-8")
             agent_b_text = (
@@ -96,6 +112,7 @@ class BenchmarkRunner:
             expected_keys = plan.all_execution_keys(labels)
 
             self.store.write_json("benchmark_plan.json", plan)
+            logger.info("Plan loaded: %d cases across %d agents", len(plan.cases), len(labels))
 
             all_runs: dict[str, list[CaseRunResult]] = {}
             judgments: list[CaseJudgment] = []
@@ -112,7 +129,12 @@ class BenchmarkRunner:
                     continue
                 all_runs.setdefault(label, [])
                 for case in plan.cases:
+                    if self._shutdown:
+                        self.metadata.stop_reason = "Shutdown requested (SIGTERM)"
+                        logger.warning("Run %s shutdown requested — aborting", self.metadata.run_id)
+                        break
                     self.metadata.executions_attempted += 1
+                    logger.debug("Case %d (%s) — executing", case.id, label)
                     result = self._run_case(case, label, agent_text)
                     all_runs[label].append(result)
 
@@ -127,9 +149,11 @@ class BenchmarkRunner:
                         if block:
                             blocks.append(block)
                             self.metadata.policy_blocks += 1
+                            logger.info("Case %d (%s) — policy blocked", case.id, label)
                         else:
                             self.metadata.infrastructure_failures += 1
                             infra_errors.append(_infra_error(case, label, "agent", failed_cap))
+                            logger.warning("Case %d (%s) — infrastructure failure", case.id, label)
                         self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
                         continue
                     if result.infrastructure_error:
@@ -142,6 +166,9 @@ class BenchmarkRunner:
                                 result.clarification_capture or result.agent_capture,
                             )
                         )
+                        logger.warning(
+                            "Case %d (%s) — infrastructure error (empty output)", case.id, label
+                        )
                         self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
                         continue
 
@@ -150,6 +177,9 @@ class BenchmarkRunner:
                         judgment = self._judge_case(case, label, result.final_output)
                     except Exception as exc:
                         self.metadata.infrastructure_failures += 1
+                        logger.error(
+                            "Case %d (%s) — judge failed: %s", case.id, label, exc
+                        )
                         infra_errors.append(
                             InfrastructureError(
                                 case_id=case.id,
@@ -166,7 +196,20 @@ class BenchmarkRunner:
                     if judgment.judge_capture:
                         _add_usage_from_capture(self.metadata, judgment.judge_capture)
                     self.metadata.executions_judged += 1
+                    logger.info(
+                        "Case %d (%s) — judged: %s",
+                        case.id, label, judgment.overall_rating.value,
+                    )
                     self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
+
+                if self._shutdown:
+                    break
+
+            if self._shutdown:
+                self.metadata.completed_at = datetime.now(UTC).isoformat()
+                self.metadata.status = RunStatus.ABORTED
+                self.store.write_json("run_metadata.json", self.metadata)
+                return self.metadata.status
 
             # collect terminal keys and validate coverage
             terminal_keys = collect_terminal_keys(all_runs, judgments, blocks)
@@ -190,6 +233,15 @@ class BenchmarkRunner:
             self.metadata.completed_at = datetime.now(UTC).isoformat()
             self.metadata.status = _final_status(plan, judgments, blocks, coverage)
             run_status = self.metadata.status
+            logger.info(
+                "Run %s finished — status=%s judged=%d/%d blocks=%d infra=%d",
+                self.metadata.run_id,
+                run_status.value,
+                self.metadata.executions_judged,
+                self.metadata.executions_planned,
+                self.metadata.policy_blocks,
+                self.metadata.infrastructure_failures,
+            )
 
             # per-agent verdicts
             agent_verdicts: dict[str, Any] = {}
@@ -205,9 +257,7 @@ class BenchmarkRunner:
             self.store.write_json("final_verdict.json", run_verdict)
             self.store.write_text(
                 "final_verdict.md",
-                final_verdict_markdown(
-                    _legacy_verdict(plan, judgments, run_status, per_agent_tallies)
-                ),
+                run_verdict_markdown(run_verdict, plan),
             )
             self.store.write_text("case_judgments.md", case_judgments_markdown(judgments))
             self.store.write_json("run_metadata.json", self.metadata)
@@ -216,14 +266,18 @@ class BenchmarkRunner:
             self.metadata.completed_at = datetime.now(UTC).isoformat()
             self.metadata.status = RunStatus.ABORTED
             self.metadata.stop_reason = "Interrupted by user"
+            logger.warning("Run %s aborted by user", self.metadata.run_id)
             self.store.write_json("run_metadata.json", self.metadata)
             return self.metadata.status
         except Exception as exc:
             self.metadata.completed_at = datetime.now(UTC).isoformat()
             self.metadata.status = RunStatus.INFRASTRUCTURE_FAILED
             self.metadata.stop_reason = f"{type(exc).__name__}: {exc}"
+            logger.error("Run %s failed: %s", self.metadata.run_id, exc, exc_info=True)
             self.store.write_json("run_metadata.json", self.metadata)
-            raise
+            return self.metadata.status
+        finally:
+            signal.signal(signal.SIGTERM, prev_sigterm)
 
     def _load_or_generate_plan(self, agent_a: str, agent_b: str | None) -> BenchmarkPlan:
         if self.plan_path:
@@ -570,31 +624,3 @@ def _coverage_for_agent(
     expected_agent = {k for k in expected if k.agent_label == agent_label}
     terminal_agent = {k for k in terminal if k.agent_label == agent_label}
     return validate_execution_coverage(expected_agent, terminal_agent)
-
-
-def _legacy_verdict(
-    plan: BenchmarkPlan,
-    judgments: list[CaseJudgment],
-    status: RunStatus,
-    tallies: dict[str, Any],
-) -> dict[str, Any]:
-    from collections import Counter
-
-    first_tally: Any = next(iter(tallies.values()), {}) if tallies else {}
-    ratings = Counter(j.overall_rating.value for j in judgments)
-    family_scores = getattr(first_tally, "family_scores", {})
-    gate_failures = getattr(first_tally, "gate_failures", 0)
-    validated = status == RunStatus.COMPLETED and gate_failures == 0
-    return {
-        "overall_verdict": "Validated" if validated else "Not Validated",
-        "run_status": status.value,
-        "decision": "Ready for use" if validated else "Revise or rerun before use",
-        "cases_planned": len(plan.cases),
-        "cases_judged": len(judgments),
-        "rating_counts": dict(ratings),
-        "gate_failures": int(gate_failures),
-        "family_scores": family_scores,
-        "strongest_capabilities": [],
-        "remaining_weak_spots": [],
-        "confidence_notes": "",
-    }

@@ -2,17 +2,34 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 
+from .config import load_config
 from .inspect import inspect_run
+from .models import RunStatus
 from .tui import BenchDeckTUI
+
+logger = logging.getLogger("benchdeck")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="benchdeck", description="Agent benchmark harness and TUI"
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to a TOML configuration file",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging level (default: WARNING)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -36,6 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s %(levelname)-8s %(name)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
+    cfg = load_config(args.config if hasattr(args, "config") else None)
+    if cfg:
+        logger.debug("Loaded config: %s", cfg)
+
     if args.command == "run":
         if not os.environ.get("OPENAI_API_KEY"):
             print("Error: OPENAI_API_KEY environment variable is not set.", file=sys.stderr)
@@ -51,13 +78,11 @@ def main(argv: list[str] | None = None) -> int:
             judge_model=args.judge_model,
             plan_path=args.plan,
         )
-        try:
-            status = runner.run()
-        except Exception as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
+        status = runner.run()
         print(status.value)
-        return 0 if status.value == "completed" else 2
+        if status == RunStatus.COMPLETED:
+            return 0
+        return 2
     if args.command == "tui":
         BenchDeckTUI(args.run_dir, args.refresh).run()
         return 0

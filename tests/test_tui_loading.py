@@ -11,12 +11,14 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from benchdeck.tui import (
-    BenchDeckTUI,
+import pytest
+
+from benchdeck.loader import (
     Snapshot,
     _load_zip_bytes,
     load_snapshot,
 )
+from benchdeck.tui import BenchDeckTUI
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TUI result lookup by agent and case
@@ -95,24 +97,16 @@ def make_zip_bytes(files: dict[str, Any]) -> bytes:
     return buf.getvalue()
 
 
-def test_zip_duplicate_basename_silently_overwrites() -> None:
-    """Known defect: _load_zip_bytes uses Path(name).name as dict key.
-    Two ZIP entries with the same basename in different subdirectories
-    result in a silent last-one-wins overwrite. No error is raised.
-    This test documents the current (incorrect) behavior. When the
-    underlying defect is fixed (duplicate basenames should raise
-    ValueError), update this test to assert the ValueError instead.
-    """
+def test_zip_duplicate_basename_raises_valueerror() -> None:
+    """Duplicate ZIP basenames in different directories raise ValueError."""
     duplicate_zip = make_zip_bytes(
         {
             "run_metadata.json": {"status": "completed", "planned_cases": 8},
             "subdir/run_metadata.json": {"status": "running", "planned_cases": 0},
         }
     )
-    snapshot = _load_zip_bytes(duplicate_zip)
-    # Currently loads without error — documents the known silent-overwrite bug.
-    assert snapshot is not None
-    assert snapshot.metadata is not None
+    with pytest.raises(ValueError, match="Duplicate basename"):
+        _load_zip_bytes(duplicate_zip)
 
 
 def test_zip_loading_handles_corrupt_zip() -> None:

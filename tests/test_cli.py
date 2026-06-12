@@ -100,12 +100,12 @@ def test_main_run_missing_api_key() -> None:
         assert result == 1
 
 
-def test_main_run_with_api_key_errors_on_missing_agent(tmp_path: Path) -> None:
+def test_main_run_returns_2_on_planner_failure_with_invalid_key(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent.md"
     agent_path.write_text("# Agent\n")
     with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=True):
         result = main(["run", "--agent-a", str(agent_path), "--output-dir", str(tmp_path / "out")])
-        assert result == 1
+        assert result == 2
 
 
 def test_main_tui_exits_on_bad_run_dir(tmp_path: Path) -> None:
