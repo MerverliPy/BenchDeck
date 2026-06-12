@@ -328,9 +328,7 @@ def test_launch_run_uses_snapshot_metadata_fallback(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent.md"
     agent_path.write_text("# test agent")
     tui = BenchDeckTUI(tmp_path)
-    tui.snapshot = Snapshot(
-        metadata={"config": {"agent_a": str(agent_path), "model": "gpt-4o"}}
-    )
+    tui.snapshot = Snapshot(metadata={"config": {"agent_a": str(agent_path), "model": "gpt-4o"}})
     with _mock_popen():
         tui._launch_run()
         assert tui._status_msg.startswith("Launched PID")
@@ -342,9 +340,7 @@ def test_launch_run_prefers_explicit_args(tmp_path: Path) -> None:
     agent_a = tmp_path / "explicit_agent.md"
     agent_a.write_text("# test")
     tui = BenchDeckTUI(tmp_path, agent_a_path=agent_a, model="gpt-4o-mini")
-    tui.snapshot = Snapshot(
-        metadata={"config": {"agent_a": "/other/agent.md", "model": "gpt-4o"}}
-    )
+    tui.snapshot = Snapshot(metadata={"config": {"agent_a": "/other/agent.md", "model": "gpt-4o"}})
     with _mock_popen():
         tui._launch_run()
         assert tui._status_msg.startswith("Launched PID")
@@ -386,10 +382,20 @@ def test_detail_shows_orphan_infra_errors() -> None:
                 ]
             },
             infrastructure_errors=[
-                {"case_id": None, "agent_label": "agent_a", "stage": "planner",
-                 "error_type": "ConfigError", "message": "Bad config"},
-                {"case_id": 1, "agent_label": "agent_a", "stage": "agent",
-                 "error_type": "Timeout", "message": "timed out"},
+                {
+                    "case_id": None,
+                    "agent_label": "agent_a",
+                    "stage": "planner",
+                    "error_type": "ConfigError",
+                    "message": "Bad config",
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "stage": "agent",
+                    "error_type": "Timeout",
+                    "message": "timed out",
+                },
             ],
         ),
     )
