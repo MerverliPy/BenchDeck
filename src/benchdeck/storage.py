@@ -6,9 +6,12 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from .manifest import Manifest
 
 
 def _serialize(value: Any) -> Any:
@@ -32,17 +35,27 @@ def _json_default(obj: Any) -> Any:
 class ArtifactStore:
     """Atomic JSON/text artifact writer safe for a concurrently watching TUI."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, manifest: Manifest | None = None) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
+        self._manifest: Manifest | None = manifest
 
     def write_json(self, name: str, value: BaseModel | dict[str, Any] | list[Any]) -> Path:
         payload = _serialize(value)
         text = json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default) + "\n"
-        return self._atomic_write(name, text)
+        path = self._atomic_write(name, text)
+        self._record_manifest(name, text)
+        return path
 
     def write_text(self, name: str, text: str) -> Path:
-        return self._atomic_write(name, text.rstrip() + "\n")
+        content = text.rstrip() + "\n"
+        path = self._atomic_write(name, content)
+        self._record_manifest(name, content)
+        return path
+
+    def _record_manifest(self, name: str, content: str) -> None:
+        if self._manifest is not None:
+            self._manifest.record(name, content)
 
     def read_json(self, name: str, default: Any = None) -> Any:
         path = self.root / name

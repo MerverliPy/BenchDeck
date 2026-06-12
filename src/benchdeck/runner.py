@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import signal
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .budget import BudgetLimits, BudgetTracker, preflight_check
+from .manifest import Manifest
 from .models import (
     BenchmarkCase,
     BenchmarkPlan,
@@ -53,37 +57,68 @@ class BenchmarkRunner:
         agent_b_path: Path | None,
         output_dir: Path,
         model: str,
+        planner_model: str | None = None,
         judge_model: str,
         plan_path: Path | None = None,
         planner_gateway: GatewayProtocol | None = None,
         agent_gateway: GatewayProtocol | None = None,
         judge_gateway: GatewayProtocol | None = None,
         overwrite: bool = False,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        budget: BudgetLimits | None = None,
+        resume_from: Path | None = None,
+        num_judges: int = 1,
     ) -> None:
         self.agent_a_path = agent_a_path
         self.agent_b_path = agent_b_path
         self.output_root = output_dir
         self.plan_path = plan_path
-        self._planner_gateway = planner_gateway
-        self.agent_gateway = agent_gateway or OpenAIGateway(GatewayConfig(model=model))
-        self.judge_gateway = judge_gateway or OpenAIGateway(GatewayConfig(model=judge_model))
+        _planner_model = planner_model or model
+        _gw_timeout = timeout if timeout is not None else 90.0
+        _gw_retries = max_retries if max_retries is not None else 3
+        self._planner_gateway_user = planner_gateway
+        self._planner_model = _planner_model
+        self._gw_timeout = _gw_timeout
+        self._gw_retries = _gw_retries
+        self.agent_gateway = agent_gateway or OpenAIGateway(
+            GatewayConfig(model=model, timeout_s=_gw_timeout, max_retries=_gw_retries)
+        )
+        self.judge_gateway = judge_gateway or OpenAIGateway(
+            GatewayConfig(
+                model=judge_model, timeout_s=_gw_timeout, max_retries=_gw_retries,
+                use_structured_output=True,
+            )
+        )
         self._shutdown = False
+        self.num_judges = max(1, num_judges)
+        self.budget = BudgetTracker(limits=budget or BudgetLimits())
         self.metadata = RunMetadata(
             config={
                 "agent_a": str(agent_a_path),
                 "agent_b": str(agent_b_path) if agent_b_path else None,
                 "model": model,
+                "planner_model": _planner_model,
                 "judge_model": judge_model,
                 "output_dir": str(output_dir),
+                "timeout": _gw_timeout,
+                "max_retries": _gw_retries,
             }
         )
-        self.output_dir = output_dir / self.metadata.run_id
-        if _dir_has_artifacts(output_dir) and not overwrite:
+        self._resume_from = resume_from
+        if resume_from is not None and resume_from.is_dir():
+            self.output_dir = resume_from
+            self.metadata.run_id = resume_from.name
+        else:
+            self.output_dir = output_dir / self.metadata.run_id
+        if _dir_has_artifacts(output_dir) and not overwrite and resume_from is None:
             raise RuntimeError(
                 f"Output directory {output_dir} already contains run artifacts. "
                 f"Use --overwrite to replace, or point to a parent directory."
             )
-        self.store = ArtifactStore(self.output_dir)
+        self.manifest = Manifest(self.output_dir)
+        self.store = ArtifactStore(self.output_dir, manifest=self.manifest)
+        self._acquire_lock()
 
     @property
     def agent_labels(self) -> list[str]:
@@ -91,6 +126,45 @@ class BenchmarkRunner:
         if self.agent_b_path is not None:
             labels.append("agent_b")
         return labels
+
+    def _acquire_lock(self) -> None:
+        lock_path = self.output_dir / "run.lock"
+        if lock_path.exists():
+            try:
+                stale_ms = (datetime.now(UTC) - datetime.fromtimestamp(
+                    lock_path.stat().st_mtime, tz=UTC
+                )).total_seconds() * 1000
+                if stale_ms < 600_000:
+                    pid = lock_path.read_text().strip()
+                    raise RuntimeError(
+                        f"Run lock held by PID {pid} — another run may be in progress. "
+                        "Remove run.lock manually if stale."
+                    )
+                lock_path.unlink()
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+        lock_path.write_text(str(os.getpid()))
+        self._lock_path = lock_path
+
+    def _release_lock(self) -> None:
+        if getattr(self, "_lock_path", None) is not None:
+            with contextlib.suppress(FileNotFoundError):
+                self._lock_path.unlink()
+
+    def _load_existing_judgments(self) -> list[CaseJudgment]:
+        raw = self.store.read_json("case_judgments.json") or []
+        if not isinstance(raw, list):
+            return []
+        loaded: list[CaseJudgment] = []
+        for item in raw:
+            if isinstance(item, dict):
+                try:
+                    loaded.append(CaseJudgment.model_validate(item))
+                except Exception:
+                    continue
+        return loaded
 
     def _on_signal(self, signum: int, frame: object) -> None:
         self._shutdown = True
@@ -110,21 +184,72 @@ class BenchmarkRunner:
             agent_b_text = (
                 self.agent_b_path.read_text(encoding="utf-8") if self.agent_b_path else None
             )
-            plan = self._load_or_generate_plan(agent_a_text, agent_b_text)
+            existing_judgments: list[CaseJudgment] = []
+            completed_keys: set[ExecutionKey] = set()
+            all_runs: dict[str, list[CaseRunResult]] = {}
+            blocks: list[PolicyBlock] = []
+            infra_errors: list[InfrastructureError] = []
+
+            if self._resume_from is not None:
+                plan_data = self.store.read_json("benchmark_plan.json")
+                if plan_data is None:
+                    raise RuntimeError(
+                        f"Cannot resume: no benchmark_plan.json in {self._resume_from}"
+                    )
+                plan = BenchmarkPlan.model_validate(plan_data)
+                existing_judgments = self._load_existing_judgments()
+                completed_keys = {j.execution_key for j in existing_judgments}
+                existing_results = self.store.read_json("run_results.json") or {}
+                for label, models_list in existing_results.items():
+                    if isinstance(models_list, list):
+                        loaded = [
+                            CaseRunResult.model_validate(r)
+                            for r in models_list
+                            if isinstance(r, dict)
+                        ]
+                    else:
+                        loaded = []
+                    all_runs.setdefault(label, []).extend(loaded)
+                existing_blocks = self.store.read_json("policy_blocks.json") or []
+                blocks = [
+                    PolicyBlock.model_validate(b) for b in existing_blocks if isinstance(b, dict)
+                ]
+                existing_infra = self.store.read_json("infrastructure_errors.json") or []
+                infra_errors = [
+                    InfrastructureError.model_validate(e)
+                    for e in existing_infra
+                    if isinstance(e, dict)
+                ]
+                logger.info(
+                    "Resumed run %s: %d cases already judged",
+                    self.metadata.run_id,
+                    len(existing_judgments),
+                )
+            else:
+                plan = self._load_or_generate_plan(agent_a_text, agent_b_text)
+                self.store.write_json("benchmark_plan.json", plan)
 
             labels = self.agent_labels
             self.metadata.cases_in_plan = len(plan.cases)
             self.metadata.agents_in_run = len(labels)
             self.metadata.executions_planned = len(plan.cases) * len(labels)
+            self.metadata.executions_attempted = len(completed_keys)
+            self.metadata.executions_model_completed = len(completed_keys)
+            self.metadata.executions_judged = len(existing_judgments)
             expected_keys = plan.all_execution_keys(labels)
 
-            self.store.write_json("benchmark_plan.json", plan)
+            if self._resume_from is None:
+                self.store.write_json("benchmark_plan.json", plan)
             logger.info("Plan loaded: %d cases across %d agents", len(plan.cases), len(labels))
 
-            all_runs: dict[str, list[CaseRunResult]] = {}
-            judgments: list[CaseJudgment] = []
-            blocks: list[PolicyBlock] = []
-            infra_errors: list[InfrastructureError] = []
+            # Preflight budget check
+            budget_warnings = preflight_check(
+                self.budget.limits, len(plan.cases), len(labels)
+            )
+            for w in budget_warnings:
+                logger.warning("Budget preflight: %s", w)
+
+            judgments: list[CaseJudgment] = existing_judgments
 
             label_texts: list[tuple[str, str | None]] = [
                 ("agent_a", agent_a_text),
@@ -136,6 +261,8 @@ class BenchmarkRunner:
                     continue
                 all_runs.setdefault(label, [])
                 for case in plan.cases:
+                    if ExecutionKey(agent_label=label, case_id=case.id) in completed_keys:
+                        continue
                     if self._shutdown:
                         self.metadata.stop_reason = "Shutdown requested (SIGTERM)"
                         logger.warning("Run %s shutdown requested — aborting", self.metadata.run_id)
@@ -180,33 +307,28 @@ class BenchmarkRunner:
                         continue
 
                     self.metadata.executions_model_completed += 1
-                    try:
-                        judgment = self._judge_case(case, label, result.final_output)
-                    except Exception as exc:
-                        self.metadata.infrastructure_failures += 1
-                        logger.error("Case %d (%s) — judge failed: %s", case.id, label, exc)
-                        infra_errors.append(
-                            InfrastructureError(
-                                case_id=case.id,
-                                agent_label=label,
-                                case_title=case.title,
-                                stage="judge",
-                                error_type=type(exc).__name__,
-                                message=str(exc),
-                            )
+                    for judge_idx in range(self.num_judges):
+                        if self._shutdown or self.budget.exhausted:
+                            break
+                        judgment, judge_err = self._judge_case(
+                            case, label, result.final_output, judge_idx
                         )
-                        self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
-                        continue
-                    judgments.append(judgment)
-                    if judgment.judge_capture:
-                        _add_usage_from_capture(self.metadata, judgment.judge_capture)
-                    self.metadata.executions_judged += 1
-                    logger.info(
-                        "Case %d (%s) — judged: %s",
-                        case.id,
-                        label,
-                        judgment.overall_rating.value,
-                    )
+                        if judgment is None:
+                            self.metadata.infrastructure_failures += 1
+                            if judge_err is not None:
+                                infra_errors.append(judge_err)
+                            continue
+                        judgments.append(judgment)
+                        if judgment.judge_capture:
+                            _add_usage_from_capture(self.metadata, judgment.judge_capture)
+                        self.metadata.executions_judged += 1
+                        logger.info(
+                            "Case %d (%s) judge %d — %s",
+                            case.id,
+                            label,
+                            judge_idx,
+                            judgment.overall_rating.value,
+                        )
                     self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
 
                 if self._shutdown:
@@ -262,6 +384,28 @@ class BenchmarkRunner:
 
             self.store.write_json("summary_tally.json", per_agent_tallies)
             self.store.write_json("final_verdict.json", run_verdict)
+            self.store.write_json(
+                "budget_tracker.json",
+                {
+                    "limits": {
+                        k: v
+                        for k, v in self.budget.limits.__dict__.items()
+                        if v is not None
+                    },
+                    "logical_calls": self.budget.logical_calls,
+                    "http_attempts": self.budget.http_attempts,
+                    "total_input_tokens": self.budget.total_input_tokens,
+                    "total_output_tokens": self.budget.total_output_tokens,
+                    "input_tokens_planner": self.budget.input_tokens_planner,
+                    "output_tokens_planner": self.budget.output_tokens_planner,
+                    "input_tokens_agent": self.budget.input_tokens_agent,
+                    "output_tokens_agent": self.budget.output_tokens_agent,
+                    "input_tokens_judge": self.budget.input_tokens_judge,
+                    "output_tokens_judge": self.budget.output_tokens_judge,
+                    "exhausted": self.budget.exhausted,
+                    "exhausted_reason": self.budget.exhausted_reason,
+                },
+            )
             self.store.write_text(
                 "final_verdict.md",
                 run_verdict_markdown(run_verdict, plan),
@@ -284,15 +428,36 @@ class BenchmarkRunner:
             self.store.write_json("run_metadata.json", self.metadata)
             return self.metadata.status
         finally:
+            self._release_lock()
             signal.signal(signal.SIGTERM, prev_sigterm)
 
     def _load_or_generate_plan(self, agent_a: str, agent_b: str | None) -> BenchmarkPlan:
         if self.plan_path:
             return BenchmarkPlan.model_validate_json(self.plan_path.read_text(encoding="utf-8"))
-        planner = self._planner_gateway or self.agent_gateway
+        if self.budget.exhausted:
+            raise RuntimeError(
+                f"Budget exhausted before planner: {self.budget.exhausted_reason}"
+            )
+        if self._planner_gateway_user is not None:
+            planner = self._planner_gateway_user
+        else:
+            planner = OpenAIGateway(
+                GatewayConfig(
+                    model=self._planner_model,
+                    timeout_s=self._gw_timeout,
+                    max_retries=self._gw_retries,
+                    use_structured_output=True,
+                )
+            )
         gen_result = planner.generate_json(
             instructions=PLANNER_INSTRUCTIONS,
             input_text=planner_input(agent_a, agent_b),
+        )
+        self.budget.record_call(
+            stage="planner",
+            input_tokens=gen_result.total_input_tokens,
+            output_tokens=gen_result.total_output_tokens,
+            http_attempts=gen_result.total_http_attempts,
         )
         _add_usage_from_result(self.metadata, gen_result)
         self.store.write_json("planner_capture.json", gen_result.model_dump(mode="json"))
@@ -303,7 +468,22 @@ class BenchmarkRunner:
         return BenchmarkPlan.model_validate(gen_result.value)
 
     def _run_case(self, case: BenchmarkCase, label: str, agent_text: str) -> CaseRunResult:
+        if self.budget.exhausted:
+            return CaseRunResult(
+                case_id=case.id,
+                agent_label=label,
+                agent_capture=ResponseCapture(
+                    error={"type": "BudgetExhausted", "message": self.budget.exhausted_reason},
+                ),
+                infrastructure_error=True,
+            )
         first = self.agent_gateway.generate(instructions=agent_text, input_text=case.test_prompt)
+        self.budget.record_call(
+            stage="agent",
+            input_tokens=first.total_input_tokens,
+            output_tokens=first.total_output_tokens,
+            http_attempts=first.total_http_attempts,
+        )
 
         # Check for refusal or terminal error BEFORE generic completion check
         if first.has_refusal:
@@ -370,6 +550,12 @@ class BenchmarkRunner:
             + "\n\nProvide the final response to the original task."
         )
         second = self.agent_gateway.generate(instructions=agent_text, input_text=follow_up)
+        self.budget.record_call(
+            stage="agent",
+            input_tokens=second.total_input_tokens,
+            output_tokens=second.total_output_tokens,
+            http_attempts=second.total_http_attempts,
+        )
         second_text = second.value or ""
         second_cap = _result_to_capture(second)
         return CaseRunResult(
@@ -386,19 +572,61 @@ class BenchmarkRunner:
             ),
         )
 
-    def _judge_case(self, case: BenchmarkCase, agent_label: str, output: str) -> CaseJudgment:
+    def _judge_case(
+        self, case: BenchmarkCase, agent_label: str, output: str, judge_idx: int = 0
+    ) -> tuple[CaseJudgment | None, InfrastructureError | None]:
+        if self.budget.exhausted:
+            logger.warning(
+                "Case %d (%s) — skipped judge %d: budget exhausted",
+                case.id, agent_label, judge_idx,
+            )
+            return None, InfrastructureError(
+                case_id=case.id,
+                agent_label=agent_label,
+                case_title=case.title,
+                stage=f"judge_{judge_idx}",
+                error_type="BudgetExhausted",
+                message=self.budget.exhausted_reason,
+            )
         gen_result = self.judge_gateway.generate_json(
             instructions=JUDGE_INSTRUCTIONS,
             input_text=judge_input(case, output),
         )
+        self.budget.record_call(
+            stage="judge",
+            input_tokens=gen_result.total_input_tokens,
+            output_tokens=gen_result.total_output_tokens,
+            http_attempts=gen_result.total_http_attempts,
+        )
+        _add_usage_from_result(self.metadata, gen_result)
+        capture = _result_to_capture(gen_result)
         if gen_result.value is None:
-            raise RuntimeError(
-                f"Judge failed for case {case.id} ({agent_label}): "
-                f"{gen_result.terminal_error or gen_result.parse_error}"
+            err_msg = gen_result.terminal_error.message if gen_result.terminal_error else (
+                gen_result.parse_error or "Unknown judge failure"
+            )
+            logger.error(
+                "Case %d (%s) judge %d — failed: %s",
+                case.id, agent_label, judge_idx, err_msg,
+            )
+            return None, InfrastructureError(
+                case_id=case.id,
+                agent_label=agent_label,
+                case_title=case.title,
+                stage=f"judge_{judge_idx}",
+                error_type="JudgeGenerationError",
+                message=err_msg,
+                response_id=capture.response_id,
+                request_id=capture.request_id,
+                status=capture.status,
+                finish_reason=capture.finish_reason,
+                attempts=capture.attempts,
+                error=capture.error,
+                raw_response=capture.raw_response,
             )
         payload: dict[str, Any] = dict(gen_result.value)
         payload["case_id"] = case.id
         payload["agent_label"] = agent_label
+        payload["judge_index"] = judge_idx
 
         # Build typed Rubric from judge's structured output
         raw_dims = payload.pop("rubric_dimensions", None)
@@ -442,7 +670,7 @@ class BenchmarkRunner:
         payload["judge_capture"] = capture.model_dump(mode="json")
 
         judgment = CaseJudgment.model_validate(payload)
-        return judgment
+        return judgment, None
 
     def _checkpoint(
         self,
@@ -463,7 +691,15 @@ class BenchmarkRunner:
 
 
 def _dir_has_artifacts(directory: Path) -> bool:
-    return directory.is_dir() and (directory / "run_metadata.json").exists()
+    if not directory.is_dir():
+        return False
+    if (directory / "run_metadata.json").exists():
+        return True
+    return any(
+        (d / "run_metadata.json").exists()
+        for d in directory.iterdir()
+        if d.is_dir()
+    )
 
 
 def _result_to_capture(result: GenerationResult[Any]) -> ResponseCapture:

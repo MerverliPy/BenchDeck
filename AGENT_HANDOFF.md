@@ -621,3 +621,192 @@ All 13 audit findings have been resolved:
 | Schema in wheel | absent | **present** |
 
 *Resolution completed 2026-06-11. All 284 tests pass, ruff/mypy/pip-check clean. Commit `725d3b4` added a visual regression CI job (`ci.yml`) and 62 golden-screenshot tests in `tests/test_screenshots.py` with a `scripts/generate_demo_screens.py` screenshot generator. The CI matrix runs Python 3.11, 3.12, and 3.13. The `visual-regression` CI job runs on PRs only, generates screenshots, and compares them against golden images in `assets/screenshots/golden/`.*
+
+---
+
+## Unfinished Features Implementation Plan (2026-06-12)
+
+Organized by dependency order. Each phase can ship independently; later phases build on earlier ones.
+
+---
+
+### Phase 1: Foundation Fixes (low risk, unblock all later work)
+
+**1a. Wire config into runner/CLI** (REMAINING_ISSUES A2)
+- `config.py` exists but `cli.py:73` loads it and discards it
+- Route `cfg` dict into `BenchmarkRunner.__init__` as `GatewayConfig` overrides (model, timeout, max_retries)
+- Add `--planner-model` CLI flag (separate from `--model` for agent)
+- Add `--timeout`, `--max-retries` CLI flags that merge with TOML config
+- Affected: `cli.py`, `runner.py`, `openai_gateway.py`
+
+**1b. Add structured logging** (REMAINING_ISSUES A1)
+- Replace scattered `logging.getLogger` calls with a central `log_config()` function
+- Add `--log-file` CLI option; emit JSON-structured logs for machine parsing
+- Log every logical call + retry with run_id, agent_label, case_id context
+- Affected: new `src/benchdeck/logging_config.py`, `cli.py`, `runner.py`
+
+**1c. Fix runner re-raise on infrastructure failure** (REMAINING_ISSUES A9)
+- `runner.py:395-398` raises `RuntimeError` on judge failure — should catch and record as `InfrastructureError` instead (it already does for agent failures)
+- Same pattern in `_run_case` for clarification second-call failures
+- Affected: `runner.py`
+
+**1d. Add dependency lock file** (REMAINING_ISSUES A4)
+- Generate `requirements.txt` with `pip-compile` or `pip freeze` from a known clean venv
+- Add `constraints.txt` for reproducible CI
+- Affected: `requirements.txt`, `constraints.txt`, `pyproject.toml`
+
+---
+
+### Phase 2: Gateway Hardening
+
+**2a. SDK structured output for planner and judge** (REMAINING_ISSUES A8)
+- Currently uses `generate_json()` which does text-to-JSON parsing with fallback
+- Wire OpenAI SDK's `response_format` / structured output API for planner and judge
+- Keep text-fallback path but prefer SDK-native structured parsing
+- Preserve raw response capture before Pydantic validation
+- Affected: `openai_gateway.py`, `prompts.py`, `runner.py`
+
+**2b. Resource budgets** (OPENCODE Phase 5)
+- New `Budget` Pydantic model with limits: `max_output_tokens_planner`, `max_output_tokens_agent`, `max_output_tokens_judge`, `max_logical_requests`, `max_http_attempts`, `max_total_input_tokens`, `max_total_output_tokens`
+- Preflight: compute planned executions, estimate calls/tokens, reject if plan exceeds ceilings
+- Runtime: check budgets before every logical call; stop with budget-exhausted reason
+- Track and persist usage breakdown (by agent, by case, by stage: planner/agent/clarification/judge)
+- New CLI flags: `--max-output-tokens-*`, `--max-requests`, `--max-tokens`, `--capture-level minimal|standard|full`
+- Affected: new `src/benchdeck/budget.py`, `models.py`, `cli.py`, `runner.py`, `openai_gateway.py`, `reporting.py`
+
+---
+
+### Phase 3: Artifact Store Hardening (OPENCODE Phase 4)
+
+**3a. Run isolation**
+- `runner.py:80` already creates `<output_root>/<run_id>/` — upgrade guard to detect subdirectories that already contain complete runs
+- Add file-based run lock (`run.lock`) with timeout; prevent concurrent writers
+- Affected: `runner.py`, `storage.py`
+
+**3b. Transactional snapshot with manifest**
+- Option A (simpler, recommended): Write a `CURRENT` manifest pointer + generation directories (`g000001/`, `g000002/`)
+- Option B: single atomic `snapshot.json` with all state replaced atomically
+- Add SHA-256 and byte size to every artifact in manifest
+- Add `schema_version`, `run_id`, `generation`, timestamps in manifest
+- Affected: new `src/benchdeck/manifest.py`, `storage.py`, `runner.py`
+
+**3c. Resume support**
+- `--resume <run_dir>` CLI flag
+- Reconstruct state from canonical snapshot: load completed ExecutionKeys, skip them
+- Validate config/source hashes before resuming (reject if agent files or config changed)
+- Never duplicate completed judgments
+- Affected: `runner.py`, `cli.py`, `manifest.py`
+
+**3d. Inspector hardening**
+- Upgrade `inspect_run()` to validate: checksum integrity from manifest, schema versions, exact key equality, referential integrity, counter consistency, no ambiguous v1 attribution
+- Return non-zero for invalid artifacts; emit `--json` machine-readable diagnostics
+- Affected: `inspect.py`
+
+---
+
+### Phase 4: Multi-Judge Aggregation (IMPLEMENTATION_CHECKLIST P1)
+
+**4a. Multi-judge model**
+- Allow `--judges N` (default 1) — run N independent judge calls per case
+- Store all N judgments per ExecutionKey in artifact store
+- `CaseJudgment` already has `agent_label` + `case_id`; add `judge_index` field
+- `Rubric.overall_rating()` already deterministic — no model-dependent aggregation needed
+- Affected: `models.py`, `runner.py`, `reporting.py`, `cli.py`
+
+**4b. Disagreement reporting**
+- Add `JudgeDisagreement` model: per-dimension rating distribution, inter-judge agreement metrics (e.g., Fleiss' kappa on 0-4 ratings)
+- Surface in TUI detail view and Markdown reports
+- Flag cases with high judge disagreement for review
+- Affected: new `src/benchdeck/disagreement.py`, `models.py`, `reporting.py`, `tui.py`
+
+---
+
+### Phase 5: TUI Subprocess Control + Polish (IMPLEMENTATION_CHECKLIST P2 + OPENCODE Phase 6)
+
+**5a. Launch/cancel runs from TUI**
+- Add keybinding (e.g., `n` for "new run") that spawns `benchdeck run` as a subprocess
+- Show subprocess status in status bar; `Ctrl+C` or `x` to cancel
+- Read subprocess stdout/stderr; display live progress
+- Watch the run's artifact directory as it populates
+- Affected: `tui.py` (major addition — roughly 80-120 lines)
+
+**5b. Agent filter/side-by-side comparison view**
+- Add `Tab` key to toggle between agents in comparison mode
+- Add side-by-side comparison view (horizontal split when width >= 80 cols)
+- Show per-agent tally and verdict separately (already mostly done in v0.1)
+- Affected: `tui.py`
+
+**5c. TUI validation display**
+- Show inspector validation pass/fail in Overview tab
+- Display manifest schema version and generation number
+- Show parse/validation errors rather than converting malformed JSON to empty data
+- Affected: `tui.py`, `loader.py`
+
+---
+
+### Phase 6: Distribution & Release (IMPLEMENTATION_CHECKLIST P3)
+
+**6a. PyPI publishing**
+- Add `twine` check step to CI
+- Add GitHub Actions workflow for PyPI publish on tag
+- Set up trusted publishing via PyPI OIDC
+- Affected: `.github/workflows/publish.yml`
+
+**6b. Signed release artifacts + SBOM**
+- Generate SBOM with `pip-audit` or `cyclonedx-python`
+- Attach SBOM + wheel/sdist hashes to GitHub Release
+- Sign artifacts with `sigstore` or GPG
+- Affected: new `.github/workflows/release.yml`
+
+---
+
+### Phase 7: Final Polish
+
+**7a. Refactor models.py** (REMAINING_ISSUES A3, low priority)
+- Split `models.py` (691 lines) into domain modules:
+  - `models/plan.py` — BenchmarkPlan, BenchmarkCase, AgentProfile, PlanProvenance
+  - `models/execution.py` — ExecutionKey, CaseRunResult, ResponseCapture
+  - `models/judgment.py` — CaseJudgment, GateCheck, Rubric, RubricDimension
+  - `models/result.py` — AgentTally, AgentBenchmarkVerdict, ComparisonVerdict, BenchmarkRunVerdict, CoverageReport
+  - `models/gateway.py` — GenerationResult, ResponseAttempt, UsageDetails, ErrorRecord, ErrorCategory
+  - `models/infra.py` — PolicyBlock, InfrastructureError, RunMetadata, TokenUsage
+- Backward-compatible re-export from `models/__init__.py`
+- Affected: `src/benchdeck/models/`, `src/benchdeck/models/__init__.py`
+
+**7b. Final audit gate** (OPENCODE Phase 8)
+- 14 end-to-end scenarios with fake gateways covering: single/comparison, all families, clarification, policy blocks, timeouts, refusals, malformed outputs, budget exhaustion, resume, corruption detection, prompt injection
+- Run full gate: ruff + mypy strict + pytest 85% coverage + build + wheel smoke test
+- Affected: new `tests/test_e2e_scenarios.py`
+
+---
+
+### Summary of New Files
+
+| File | Phase |
+|---|---|
+| `src/benchdeck/logging_config.py` | 1b |
+| `src/benchdeck/budget.py` | 2b |
+| `src/benchdeck/manifest.py` | 3b |
+| `src/benchdeck/disagreement.py` | 4b |
+| `src/benchdeck/models/` (6 sub-modules + `__init__.py`) | 7a |
+| `tests/test_budget.py` | 2b |
+| `tests/test_runner_resume.py` | 3c |
+| `tests/test_e2e_scenarios.py` | 7b |
+| `.github/workflows/publish.yml` | 6a |
+| `.github/workflows/release.yml` | 6b |
+
+### Dependency Graph
+
+```
+Phase 1 (foundations) --> Phase 2 (gateway) --> Phase 3 (artifacts)
+                                                      |
+                         Phase 4 (multi-judge) <------+
+                                                      |
+                         Phase 5 (TUI) <--------------+
+                                                      |
+                         Phase 6 (distribution) <-----+
+                                                      |
+                         Phase 7 (polish) <-----------+
+```
+
+Phases 1-3 are sequential. Phases 4-6 can run in parallel after Phase 3. Phase 7 is last.

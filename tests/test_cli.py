@@ -17,13 +17,14 @@ from benchdeck.cli import build_parser, main
 def test_build_parser_run_subcommand() -> None:
     parser = build_parser()
     args = parser.parse_args(
-        ["run", "--agent-a", "/tmp/agent.md", "--model", "gpt-4o", "--output-dir", "/tmp/out"]
+        ["run", "--agent-a", "/tmp/agent.md", "--model", "gpt-4o", "--judge-model", "gpt-4.1",
+         "--output-dir", "/tmp/out"]
     )
     assert args.command == "run"
     assert args.agent_a == Path("/tmp/agent.md")
     assert args.agent_b is None
     assert args.model == "gpt-4o"
-    assert args.judge_model == "gpt-4o-mini"
+    assert args.judge_model == "gpt-4.1"
     assert args.output_dir == Path("/tmp/out")
     assert args.plan is None
 
@@ -31,8 +32,26 @@ def test_build_parser_run_subcommand() -> None:
 def test_build_parser_run_default_model() -> None:
     parser = build_parser()
     args = parser.parse_args(["run", "--agent-a", "/tmp/agent.md"])
-    assert args.model == "gpt-4o-mini"
-    assert args.judge_model == "gpt-4o-mini"
+    assert args.model is None
+    assert args.judge_model is None
+    assert args.planner_model is None
+
+
+def test_build_parser_run_planner_model() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        ["run", "--agent-a", "/tmp/agent.md", "--planner-model", "gpt-4o"]
+    )
+    assert args.planner_model == "gpt-4o"
+
+
+def test_build_parser_run_timeout_max_retries() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        ["run", "--agent-a", "/tmp/agent.md", "--timeout", "60.0", "--max-retries", "5"]
+    )
+    assert args.timeout == 60.0
+    assert args.max_retries == 5
 
 
 def test_build_parser_run_comparison() -> None:

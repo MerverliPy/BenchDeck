@@ -8,6 +8,7 @@ from typing import Any
 from jsonschema import ValidationError, validate
 
 from .loader import _sum_tally_int, load_snapshot
+from .manifest import Manifest
 
 _SCHEMA_DIR = files("benchdeck") / "schemas"
 
@@ -90,6 +91,16 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
             f" {ie.get('error_type', '?')} / {ie.get('message', '')}"
         )
         warnings.append(f"Infrastructure error: {meta}")
+
+    # Manifest checksum validation (only for directory runs, not ZIP)
+    if run_dir.is_dir():
+        manifest = Manifest.load(run_dir)
+        manifest_issues = manifest.verify()
+        if manifest_issues:
+            warnings.append(
+                f"Manifest integrity errors ({len(manifest_issues)}): "
+                + "; ".join(manifest_issues[:5])
+            )
 
     pc = snapshot.planner_capture or {}
     if pc:

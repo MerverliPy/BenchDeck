@@ -3,12 +3,14 @@ from __future__ import annotations
 import contextlib
 import curses
 import datetime
+import subprocess as _sp
 import textwrap
 import time
 from pathlib import Path
 from typing import Any
 
 from .loader import Snapshot, load_snapshot
+from .manifest import Manifest
 
 
 class BenchDeckTUI:
@@ -25,6 +27,8 @@ class BenchDeckTUI:
         self.snapshot = Snapshot()
         self.last_load = 0.0
         self._status_msg = ""
+        self._proc: _sp.Popen[bytes] | None = None
+        self._proc_run_dir: Path | None = None
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -36,11 +40,15 @@ class BenchDeckTUI:
         while True:
             now = time.monotonic()
             if now - self.last_load >= self.refresh_seconds:
-                self.snapshot = load_snapshot(self.run_dir)
+                active_dir = self._proc_run_dir or self.run_dir
+                self.snapshot = load_snapshot(active_dir)
                 self.last_load = now
+            self._poll_subprocess()
             self._draw(stdscr)
             key = stdscr.getch()
             if key in (ord("q"), 27):
+                if self._proc is not None:
+                    self._cancel_run()
                 break
             self._handle_key(key)
             time.sleep(0.05)
@@ -73,6 +81,10 @@ class BenchDeckTUI:
             self.last_load = time.monotonic()
         elif key == ord("e") and self.tab == 1:
             self._export_case()
+        elif key == ord("n"):
+            self._launch_run()
+        elif key == ord("x"):
+            self._cancel_run()
 
     def _draw(self, stdscr: Any) -> None:
         stdscr.erase()
@@ -82,8 +94,9 @@ class BenchDeckTUI:
             stdscr.refresh()
             return
         title = " BENCHDECK "
+        proc_info = f" PID:{self._proc.pid}" if self._proc else ""
         status = str(self.snapshot.metadata.get("status", "no run"))
-        self._safe_add(stdscr, 0, 0, title + f"[{status}]", width, curses.A_REVERSE)
+        self._safe_add(stdscr, 0, 0, title + f"[{status}]{proc_info}", width, curses.A_REVERSE)
         tab_line = " ".join(
             f"{i + 1}:{name}" if i != self.tab else f"[{i + 1}:{name}]"
             for i, name in enumerate(self.TABS)
@@ -93,7 +106,9 @@ class BenchDeckTUI:
         viewport = lines[self.scroll : self.scroll + height - 4]
         for row, line in enumerate(viewport, start=2):
             self._safe_add(stdscr, row, 0, line, width)
-        status = self._status_msg or "h/l tabs  j/k move  Enter detail  e export  r reload  q quit"
+        status = self._status_msg or (
+            "h/l tabs  j/k move  Enter detail  e export  n run  x cancel  r reload  q quit"
+        )
         self._safe_add(stdscr, height - 1, 0, status, width, curses.A_REVERSE)
         stdscr.refresh()
 
@@ -141,6 +156,21 @@ class BenchDeckTUI:
                 lines.append(f"  WARNING: planner terminal error: {msg}")
             if pc.get("parse_error"):
                 lines.append(f"  WARNING: planner parse error: {pc['parse_error']}")
+        lines.append("")
+        # Manifest / integrity status
+        manifest = Manifest.load(self.run_dir)
+        gen = manifest.generation
+        if gen > 0:
+            manifest_issues = manifest.verify()
+            if manifest_issues:
+                lines.append(
+                    f"Manifest gen {gen}: WARNING — "
+                    f"{len(manifest_issues)} integrity issue(s)"
+                )
+            else:
+                lines.append(f"Manifest gen {gen}: valid")
+        else:
+            lines.append("Manifest: not yet present")
         lines.append("")
         if not agents:
             return lines + ["No tally data yet."]
@@ -232,6 +262,17 @@ class BenchDeckTUI:
                 lines += ["Infrastructure error: empty output after retries"]
         else:
             lines += ["No judgment yet."]
+        # Show disagreement when multiple judges differ
+        if len(case_judgments) > 1:
+            ratings = {j.get("overall_rating", "?") for j in case_judgments}
+            if len(ratings) > 1:
+                lines.append("")
+                lines.append("Judge disagreement detected:")
+                for r in sorted(ratings):
+                    count = sum(1 for j in case_judgments
+                                if j.get("overall_rating") == r)
+                    lines.append(f"  {r}: {count} judge(s)")
+
         case_infra = [
             ie for ie in self.snapshot.infrastructure_errors if ie.get("case_id") == case_id
         ]
@@ -260,6 +301,8 @@ class BenchDeckTUI:
             "j / k    move selection or scroll",
             "Enter    open selected case",
             "e        export case as Markdown",
+            "n        launch a new benchmark run",
+            "x        cancel running subprocess",
             "r        reload artifacts",
             "q / Esc  quit",
             "",
@@ -335,6 +378,55 @@ class BenchDeckTUI:
             self._status_msg = f"Exported {filename}"
         except OSError as exc:
             self._status_msg = f"Export failed: {exc}"
+
+    def _poll_subprocess(self) -> None:
+        if self._proc is None:
+            return
+        rc = self._proc.poll()
+        if rc is not None:
+            tag = "ok" if rc == 0 else f"exit={rc}"
+            self._status_msg = f"Subprocess {self._proc.pid}: {tag}"
+            self._proc = None
+            self._proc_run_dir = None
+
+    def _launch_run(self) -> None:
+        if self._proc is not None:
+            self._status_msg = "A run is already in progress"
+            return
+        base_dir = self.run_dir
+        if base_dir.is_file():
+            base_dir = base_dir.parent
+        ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+        run_dir = base_dir / ts
+        cmd = [
+            "python", "-m", "benchdeck", "run",
+            "--agent-a", str(Path("examples/repository-integrity-agent.md")),
+            "--output-dir", str(run_dir.parent),
+        ]
+        try:
+            self._proc = _sp.Popen(
+                cmd,
+                stdout=_sp.DEVNULL,
+                stderr=_sp.DEVNULL,
+            )
+            self._proc_run_dir = run_dir
+            self._status_msg = f"Launched PID {self._proc.pid} → {run_dir.name}"
+        except OSError as exc:
+            self._status_msg = f"Launch failed: {exc}"
+
+    def _cancel_run(self) -> None:
+        if self._proc is None:
+            self._status_msg = "No subprocess to cancel"
+            return
+        pid = self._proc.pid
+        self._proc.terminate()
+        try:
+            self._proc.wait(timeout=5)
+        except _sp.TimeoutExpired:
+            self._proc.kill()
+        self._status_msg = f"Cancelled PID {pid}"
+        self._proc = None
+        self._proc_run_dir = None
 
     @staticmethod
     def _safe_add(stdscr: Any, row: int, col: int, text: str, width: int, attr: int = 0) -> None:

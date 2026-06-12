@@ -505,6 +505,7 @@ class GateCheck(BaseModel):
 class CaseJudgment(BaseModel):
     case_id: int
     agent_label: str
+    judge_index: int = 0
     case_verdict: str
     gate_check: GateCheck
     rubric: Rubric

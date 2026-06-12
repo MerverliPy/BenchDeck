@@ -42,6 +42,7 @@ class GatewayConfig:
     max_output_tokens: int | None = None
     temperature: float | None = None
     extra_headers: dict[str, str] = field(default_factory=dict)
+    use_structured_output: bool = False
 
 
 @runtime_checkable
@@ -243,6 +244,8 @@ class OpenAIGateway:
             kwargs["max_output_tokens"] = self.config.max_output_tokens
         if self.config.temperature is not None:
             kwargs["temperature"] = self.config.temperature
+        if self.config.use_structured_output:
+            kwargs["text"] = {"format": {"type": "json_object"}}
         return kwargs
 
     def _call_text(self, *, instructions: str, input_text: str) -> GenerationResult[str]:
