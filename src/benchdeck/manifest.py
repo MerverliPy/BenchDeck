@@ -19,7 +19,8 @@ class Manifest:
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.root.mkdir(parents=True, exist_ok=True)
+        if not root.is_file():
+            self.root.mkdir(parents=True, exist_ok=True)
         self._generation: int = 0
         self._entries: dict[str, _ManifestEntry] = {}
 

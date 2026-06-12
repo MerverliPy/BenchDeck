@@ -489,7 +489,21 @@ class OpenAIGateway:
 
 def _extract_output_text(raw: Any) -> str:
     if isinstance(raw, dict):
-        return (raw.get("output_text") or "").strip()
+        text = raw.get("output_text") or ""
+        if text:
+            return str(text).strip()
+        for item in raw.get("output") or []:
+            if not isinstance(item, dict):
+                continue
+            for content in item.get("content") or []:
+                if isinstance(content, dict) and content.get("type") == "output_text":
+                    return str(content.get("text", "")).strip()
+        for choice in raw.get("choices") or []:
+            if isinstance(choice, dict):
+                msg = choice.get("message") or {}
+                if isinstance(msg, dict):
+                    return str(msg.get("content", "")).strip()
+        return ""
     try:
         return (getattr(raw, "output_text", None) or "").strip()
     except Exception:

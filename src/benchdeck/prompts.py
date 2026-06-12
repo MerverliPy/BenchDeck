@@ -243,6 +243,7 @@ PLANNER_OUTPUT_SCHEMA: dict[str, Any] = {
             },
             "required": [
                 "agent_name_a",
+                "agent_name_b",
                 "inferred_mission",
                 "top_priorities",
                 "boundaries",
@@ -291,6 +292,7 @@ PLANNER_OUTPUT_SCHEMA: dict[str, Any] = {
                     "clarification_expectation",
                     "tool_expectation",
                     "test_prompt",
+                    "clarification_answer_key",
                     "strong_behavior",
                     "weak_behavior",
                     "hard_fail_conditions",
