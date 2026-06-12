@@ -177,9 +177,7 @@ class BenchmarkRunner:
                         judgment = self._judge_case(case, label, result.final_output)
                     except Exception as exc:
                         self.metadata.infrastructure_failures += 1
-                        logger.error(
-                            "Case %d (%s) — judge failed: %s", case.id, label, exc
-                        )
+                        logger.error("Case %d (%s) — judge failed: %s", case.id, label, exc)
                         infra_errors.append(
                             InfrastructureError(
                                 case_id=case.id,
@@ -198,7 +196,9 @@ class BenchmarkRunner:
                     self.metadata.executions_judged += 1
                     logger.info(
                         "Case %d (%s) — judged: %s",
-                        case.id, label, judgment.overall_rating.value,
+                        case.id,
+                        label,
+                        judgment.overall_rating.value,
                     )
                     self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
 

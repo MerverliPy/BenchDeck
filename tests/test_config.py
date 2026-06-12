@@ -17,8 +17,7 @@ def test_load_config_empty_when_no_file() -> None:
 def test_load_config_reads_toml(tmp_path: Path) -> None:
     config_file = tmp_path / "benchdeck.toml"
     config_file.write_text(
-        '[run]\nmodel = "gpt-4o"\njudge_model = "gpt-4o"\n'
-        '[gateway]\ntimeout_s = 120\n'
+        '[run]\nmodel = "gpt-4o"\njudge_model = "gpt-4o"\n[gateway]\ntimeout_s = 120\n'
     )
     cfg = load_config(explicit_path=str(config_file))
     assert cfg == {
@@ -31,7 +30,7 @@ def test_load_config_deep_merges(tmp_path: Path) -> None:
     a = tmp_path / "a.toml"
     a.write_text('[run]\nmodel = "gpt-4o"\n[gateway]\ntimeout_s = 60\nmax_retries = 2\n')
     b = tmp_path / "b.toml"
-    b.write_text('[gateway]\ntimeout_s = 120\n')
+    b.write_text("[gateway]\ntimeout_s = 120\n")
 
     cfg = load_config(explicit_path=str(a))
     cfg2 = load_config(explicit_path=str(b))

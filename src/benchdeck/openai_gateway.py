@@ -450,8 +450,10 @@ class OpenAIGateway:
                 delay = _backoff(attempt_no, self.config)
                 logger.debug(
                     "Retry %d/%d after %.2fs — %s",
-                    attempt_no, self.config.max_retries,
-                    delay, last_error.category.value,
+                    attempt_no,
+                    self.config.max_retries,
+                    delay,
+                    last_error.category.value,
                 )
                 time.sleep(delay)
 
