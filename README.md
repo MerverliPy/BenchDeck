@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![CI](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-161%20passed-brightgreen.svg)](./.github/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-all%20passing-brightgreen.svg)](./.github/workflows/ci.yml)
 [![ruff](https://img.shields.io/badge/ruff-clean-000000.svg)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-clean-blue.svg)](https://mypy-lang.org)
 

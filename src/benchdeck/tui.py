@@ -215,6 +215,23 @@ class BenchDeckTUI:
                 lines += ["Infrastructure error: empty output after retries"]
         else:
             lines += ["No judgment yet."]
+        case_infra = [
+            ie for ie in self.snapshot.infrastructure_errors if ie.get("case_id") == case_id
+        ]
+        if case_infra:
+            lines.append("")
+            lines += ["Infrastructure error details:"]
+            for ie in case_infra:
+                lines += [
+                    f"  Stage: {ie.get('stage', '?')}",
+                    f"  Type: {ie.get('error_type', '?')}",
+                    f"  Message: {ie.get('message', '')}",
+                    f"  Agent: {ie.get('agent_label', '?')}",
+                ]
+                if ie.get("response_id"):
+                    lines.append(f"  Response ID: {ie['response_id']}")
+                if ie.get("attempts"):
+                    lines.append(f"  Attempts: {ie['attempts']}")
         return lines
 
     def _help(self, width: int) -> list[str]:
@@ -307,14 +324,6 @@ class BenchDeckTUI:
 
 def _wrap(text: str, width: int) -> list[str]:
     return textwrap.wrap(text, width=max(12, width - 1), replace_whitespace=False) or [""]
-
-
-def _sum_tally_int(tally: dict[str, Any], key: str) -> int:
-    total = 0
-    for agent_tally in tally.values():
-        if isinstance(agent_tally, dict):
-            total += int(agent_tally.get(key, 0) or 0)
-    return total
 
 
 def _section(title: str, text: str, width: int) -> list[str]:

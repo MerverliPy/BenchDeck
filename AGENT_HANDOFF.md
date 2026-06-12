@@ -1,557 +1,487 @@
-# BenchDeck — Agent Handoff & Audit Findings
+# Repository Audit Agent Handoff
 
-**Audit date:** 2026-06-11
-**Audited version:** 0.1.0
-**Baseline:** 145 tests pass · ruff clean · mypy strict clean · ruff format clean
+## Audit Summary
 
----
+- **Repository:** BenchDeck — evidence-preserving LLM-agent benchmark harness with live SSH TUI
+- **Branch:** `main`, commit `b3454e3`
+- **Stack:** Python 3.11+, Pydantic, OpenAI SDK, curses TUI; pip + setuptools
+- **Areas inspected:** all 14 source modules, 11 test modules, 4 CI workflows, 5 doc files, config, schemas, scripts, fixture
+- **Overall health:** Good. 165 tests pass, ruff/mypy clean, build succeeds. All 22 issues from the previous audit are resolved. The prior `AGENT_HANDOFF.md` was completely stale.
+- **Finding counts by severity:**
 
-## Instructions for Agents
+| Severity | Count |
+|----------|-------|
+| P0 | 0 |
+| P1 | 0 |
+| P2 | 6 |
+| P3 | 5 |
 
-Read this file top to bottom before touching any code. Work **one task at a time** in the order listed. After completing each task:
-
-1. Mark it `[x]` in the task list below.
-2. Run `pytest -q && ruff check .` to confirm nothing regressed.
-3. Move to the next task.
-
-**Do not introduce new features.** Every fix is a correction of existing broken or dead code, or a documentation update. Do not refactor beyond the scope of each fix. Do not commit unless the operator explicitly requests it.
-
----
-
-## Repository Snapshot
-
-BenchDeck is a Python 3.11+ evidence-preserving LLM-agent benchmark harness with a live curses TUI. The package is functionally complete for its stated P0 goals. The overall code quality is high — strict mypy, ruff lint, and ruff format all pass clean, and all 145 tests pass. However the audit found real runtime bugs, design/UX issues, dead-code accumulations, and stale documentation that must be addressed before the project can be considered release-ready.
-
-| Check | Current State |
-|---|---|
-| `pytest -q` | 145 passed |
-| `ruff check .` | All checks passed |
-| `ruff format --check .` | 23 files already formatted |
-| `mypy --no-incremental src/benchdeck` | Success: no issues found in 12 source files |
+- **Audit limitations:** The live `OpenAIGateway` HTTP path (42% covered) is tested only via `FakeGateway`. The curses TUI (14% covered) cannot be tested in automated CI. No Docker, macOS, or Windows testing. No security scanning (bandit/safety) configured.
 
 ---
 
-## Task List
+## Validation Results
 
-### BUGS — Runtime failures, incorrect behavior
-
-- [ ] **BUG-1** Fix TUI progress bar always showing 0/0 (wrong field names in `_overview`)
-- [ ] **BUG-2** Fix TUI case-list silently dropping second agent's judgments in comparison mode
-- [ ] **BUG-3** Fix misleading test assertion in `test_tui_loading.py` for duplicate basename case
-- [ ] **BUG-4** Fix transient HTTP 5xx errors (500, 502, 503) not being retried in the gateway
-
-### DESIGN ISSUES — Incorrect behavior, poor UX, silent failures
-
-- [ ] **DESIGN-1** Fix default `--model` / `--judge-model` CLI args (`"gpt-5.5"` does not exist; all default runs fail at the first API call)
-- [ ] **DESIGN-2** Fix `run_id` collision risk (second-precision timestamp; two runs started in the same second get identical IDs)
-- [ ] **DESIGN-3** Fix `prompt_version` mismatch (`BenchmarkPlan` stores `"1"` but `PLANNER_SCHEMA_VERSION` is `"2"`)
-- [ ] **DESIGN-4** Add pre-flight check for missing `OPENAI_API_KEY` in `cli.main()` with a clear error message
-- [ ] **DESIGN-5** Wrap `runner.run()` in `cli.main()` with a top-level exception handler to prevent raw tracebacks on infrastructure failure
-
-### DEAD CODE — Remove safely; do not change any behavior
-
-- [ ] **DEAD-1** Remove three unused enums from `models.py`: `BenchmarkMode`, `Stage`, `ClarificationState`
-- [ ] **DEAD-2** Remove unused constant `REQUIRED_FAMILIES` from `scoring.py`
-- [ ] **DEAD-3** Remove unused public method `generate_structured()` from `openai_gateway.py`
-- [ ] **DEAD-4** Remove unused constant `JUDGE_PROMPT_VERSION` from `prompts.py`
-- [ ] **DEAD-5** Remove unused instance attributes `_external_agent_gateway` / `_external_judge_gateway` from `runner.py`
-- [ ] **DEAD-6** Remove redundant gate-override block in `runner.py` after `model_validate()` call
-
-### STYLE / TYPE CLEANUP — Non-breaking
-
-- [ ] **STYLE-1** Replace `object.__setattr__` with plain assignment in `CaseJudgment._gate_fail_forces_fail` (model is not frozen)
-- [ ] **STYLE-2** Move inline imports inside test functions to module level in `test_tui_loading.py`
-
-### STALE DOCUMENTATION — Update to match current code
-
-- [ ] **DOCS-1** Update `IMPLEMENTATION_CHECKLIST.md` — TUI screen items marked `[x]` have active known bugs (BUG-1, BUG-2); revert to `[ ]` until those bugs are fixed
-- [ ] **DOCS-2** Update `OPENCODE_IMPLEMENTATION_PHASES.md` KNOWN BASELINE section — stale claims about mypy errors and formatting failures
-- [ ] **DOCS-3** Update `CHANGELOG.md` — add Known Issues note under v0.1.0 for the bugs found in this audit
-- [ ] **DOCS-4** Update `README.md` — replace any `gpt-5.5` references with `gpt-4o` so copy-paste examples work
+| Check | Command | Result | Evidence |
+|-------|---------|--------|----------|
+| Dependency install | `pip install -e '.[dev]'` | Passed | Installs without error |
+| Lint | `ruff check .` | Passed | `All checks passed!` |
+| Format | `ruff format --check .` | Passed | `28 files already formatted` |
+| Type check | `mypy --no-incremental src/benchdeck --ignore-missing-imports` | Passed | `Success: no issues found in 14 source files` |
+| Unit tests | `pytest -q` | Passed | 165 tests passed |
+| Coverage | `pytest --cov=benchdeck --cov-branch` | Passed | 68% overall |
+| Build | `python -m build` | Passed | Wheel + sdist built successfully |
+| Fixture inspect | `benchdeck inspect fixtures/original_run.zip` | Failed | 5 expected warnings (known fixture corruption) |
+| CI workflow (local) | Review `.github/workflows/ci.yml` | Not Executed | Requires GitHub Actions runner |
+| Materialize fixture CI | Review `.github/workflows/materialize-fixture.yml` | Blocked | References deleted `.b64.*` segments |
+| Security scan | `bandit` / `safety` | Not Executed | Not configured |
+| Wheel smoke test | Install in fresh venv | Not Executed | Requires isolated venv |
 
 ---
 
-## Detailed Fix Specifications
+## Findings Summary
+
+| ID | Severity | Confidence | Finding | Location | Status |
+|----|----------|------------|---------|----------|--------|
+| AUD-P2-001 | P2 | Confirmed | Infrastructure errors written but not consumed by loader/inspector | `runner.py:451`, `loader.py:29-48` | Open |
+| AUD-P2-002 | P2 | Confirmed | Planner capture JSON written but not consumed | `runner.py:291`, `loader.py:29-48` | Open |
+| AUD-P2-003 | P2 | Confirmed | Stale `materialize-fixture.yml` references deleted `.b64.*` segments | `.github/workflows/materialize-fixture.yml:7,22,25` | Open |
+| AUD-P2-004 | P2 | Confirmed | Bundled fixture is known-corrupt; Phase 7 v2 replacement not done | `fixtures/original_run.zip` | Open |
+| AUD-P2-005 | P2 | Confirmed | No output directory isolation — repeated runs silently overwrite | `runner.py:69`, `storage.py:23-28` | Open (known limitation) |
+| AUD-P2-006 | P2 | Confirmed | No runner integration test for comparison mode | `tests/test_runner.py:290-327` | Open |
+| AUD-P3-001 | P3 | Confirmed | `_sum_tally_int` duplicated in `tui.py` and `inspect.py` | `tui.py:312-317`, `inspect.py:91-96` | Open |
+| AUD-P3-002 | P3 | Confirmed | `results_to_list` silently returns `[]` on type mismatch | `scoring.py:93-96` | Open |
+| AUD-P3-003 | P3 | Confirmed | README hardcodes stale test count badge (161 vs actual 165) | `README.md:7` | Open |
+| AUD-P3-004 | P3 | Confirmed | `IMPLEMENTATION_CHECKLIST.md` TUI item marked complete prematurely | `IMPLEMENTATION_CHECKLIST.md:23-28` | Open |
+| AUD-P3-005 | P3 | Confirmed | Previous `AGENT_HANDOFF.md` was 100% stale | `AGENT_HANDOFF.md` (old) | Resolved by this audit |
 
 ---
 
-### BUG-1 — TUI Progress Bar Always Shows 0/0
+## Detailed Findings
 
-**File:** `src/benchdeck/tui.py`, lines 120–122
+### AUD-P2-001 — Infrastructure errors written but not consumed by loader or inspector
 
-**Root cause:** `_overview()` reads field names that do not exist in `RunMetadata`. The code uses `"planned_cases"` and `"judged_cases"` but the actual serialized field names are `"cases_in_plan"` and `"executions_judged"`. The tally fallback also fails because `summary_tally.json` stores per-agent tallies one level deeper (`{"agent_a": {"cases_planned": ...}}`), so `t.get("cases_planned")` always returns `None`.
-
-**Before:**
-```python
-planned = int(m.get("planned_cases") or t.get("cases_planned") or 0)
-judged = int(
-    m.get("judged_cases") or t.get("cases_judged") or t.get("cases_completed") or 0
-)
-```
-
-**After:**
-```python
-planned = int(m.get("cases_in_plan") or 0)
-judged = int(m.get("executions_judged") or 0)
-```
-
-**Verification:** Confirm field names against `RunMetadata` in `models.py` before applying. Add or update a test in `test_tui_loading.py` that constructs a `Snapshot` with a realistic `metadata` dict and asserts the rendered overview line contains the correct `judged/planned` count.
-
----
-
-### BUG-2 — TUI Case List Drops Second Agent's Judgments in Comparison Mode
-
-**File:** `src/benchdeck/tui.py`, line 154
-
-**Root cause:** The dict comprehension keys on `case_id` alone. In comparison mode, two `CaseJudgment` records share the same `case_id` (one per agent). The second overwrites the first silently.
-
-**Before:**
-```python
-judgments = {j.get("case_id"): j for j in self.snapshot.judgments}
-```
-
-**After:** Build a list-of-judgments per case_id so all agents are represented:
-```python
-from collections import defaultdict
-judgment_map: dict[int | None, list[dict[str, object]]] = defaultdict(list)
-for j in self.snapshot.judgments:
-    judgment_map[j.get("case_id")].append(j)
-```
-
-Then in the rendering loop, replace `judgment = judgments.get(case_id)` with `agent_judgments = judgment_map.get(case_id, [])` and render a summary that shows all agents, e.g.:
-
-```python
-agent_judgments = judgment_map.get(case_id, [])
-if agent_judgments:
-    parts = [
-        f"{j.get('overall_rating', '?')}[{j.get('agent_label', '?')}]"
-        for j in agent_judgments
-    ]
-    state = " ".join(parts)
-elif case_id in blocks:
-    state = "BLOCKED"
-else:
-    state = "PENDING"
-```
-
-**Verification:** Update `test_tui_loading.py` to assert that both agents' ratings appear in the case list when two judgments share a `case_id`.
+- **Severity:** P2
+- **Confidence:** Confirmed
+- **Affected files and symbols:**
+  - `src/benchdeck/runner.py:451` — `self.store.write_json("infrastructure_errors.json", infra_errors)`
+  - `src/benchdeck/loader.py:29-48` — `load_snapshot` reads 6 artifact files; `infrastructure_errors.json` is not among them
+  - `src/benchdeck/loader.py:13-19` — `Snapshot` dataclass has no `infrastructure_errors` field
+  - `src/benchdeck/inspect.py:25-88` — `inspect_run` reads `snapshot.metadata` for infra stats but never inspects per-error records
+- **Observed behavior:** The runner writes `infrastructure_errors.json` on every checkpoint containing detailed `InfrastructureError` records (agent label, case_id, stage, error details, raw response). The loader never reads this file. The TUI displays `metadata.infrastructure_failures` count but never shows which cases failed or why. The inspector never inspects this file.
+- **Expected behavior:** Loader should read `infrastructure_errors.json` into a `Snapshot` field. TUI should display per-case infrastructure error details. Inspector should validate that infra error records match the metadata count and surface them in warnings.
+- **Evidence:** `grep -rn "infrastructure\|infra_error" src/benchdeck/loader.py src/benchdeck/inspect.py` returns no results.
+- **Root cause:** The `infrastructure_errors` artifact was added to runner checkpoints during Phase 1 bug fixes but the loader, `Snapshot` dataclass, TUI, and inspector were not updated to consume it.
+- **Impact:** Users cannot see why a case had an infrastructure failure via the TUI or inspect output. The information is stored on disk but invisible.
+- **Reproduction steps:**
+  1. Run `benchdeck run` with any config that produces an infrastructure error (e.g. network failure)
+  2. Run `benchdeck inspect <output_dir>` — no per-error details appear
+  3. Open TUI — infrastructure failure count is shown but no per-case error details
+- **Recommended remediation:** Add `infrastructure_errors: list[dict[str, Any]]` to `Snapshot` dataclass; update `load_snapshot` and `_load_zip_bytes` to read `infrastructure_errors.json`; update `inspect_run` to enumerate per-error warnings; update TUI `_detail()` to display error info for the selected case.
+- **Required tests:** Test that `load_snapshot` reads `infrastructure_errors.json`; test that `inspect_run` reports individual infrastructure errors.
+- **Regression risks:** Low — reader-side additions only; runner writes unchanged.
+- **Dependencies or blockers:** None.
+- **Acceptance criteria:**
+  - [ ] `Snapshot` has `infrastructure_errors` field
+  - [ ] `load_snapshot` reads `infrastructure_errors.json`
+  - [ ] `inspect_run` enumerates infrastructure error warnings
+  - [ ] TUI displays infrastructure error details in case detail view
 
 ---
 
-### BUG-3 — Misleading Test Assertion for Duplicate ZIP Basename
+### AUD-P2-002 — Planner capture JSON written but not consumed
 
-**File:** `tests/test_tui_loading.py`, test `test_zip_duplicate_basename_not_rejected`
-
-**Root cause:** The assertion `assert snapshot.metadata is not None, "Duplicate basenames should be rejected"` passes when duplicates are silently accepted (last-one-wins). The assertion message claims rejection is desired, but the assertion body verifies the opposite. This is a corrupted documentation-of-intent.
-
-**Fix:** Rename the test to `test_zip_duplicate_basename_silently_overwrites` and update the assertion to explicitly verify the actual (current) behavior — that the snapshot loads without error even with duplicates, and that only one of the two values survived:
-
-```python
-def test_zip_duplicate_basename_silently_overwrites(self) -> None:
-    """
-    Known defect: _load_zip_bytes uses {Path(name).name: name} deduplication.
-    Two ZIP entries with the same basename in different subdirectories result
-    in the last one winning silently. No error is raised.
-    This test documents the current (incorrect) behavior. When the defect is
-    fixed (entries with duplicate basenames should raise ValueError), update
-    this test to assert the ValueError instead.
-    """
-    ...
-    snapshot = _load_zip_bytes(duplicate_zip)
-    # Currently loads without error — documents the known silent-overwrite bug.
-    assert snapshot is not None
-```
-
-Do not fix the underlying silent-overwrite behavior itself — that is a new feature beyond scope.
+- **Severity:** P2
+- **Confidence:** Confirmed
+- **Affected files and symbols:**
+  - `src/benchdeck/runner.py:291` — `self.store.write_json("planner_capture.json", gen_result.model_dump(mode="json"))`
+  - `src/benchdeck/loader.py:29-48` — `load_snapshot` does not read `planner_capture.json`
+  - `src/benchdeck/loader.py:13-19` — `Snapshot` has no `planner_capture` field
+- **Observed behavior:** The runner captures the full `GenerationResult` of the planner call (model response, token usage, attempts, any errors) to `planner_capture.json`. The loader never reads it. TUI and inspector cannot show planner diagnostics.
+- **Expected behavior:** Planner capture should be available via the loader for debugging and TUI display.
+- **Root cause:** `planner_capture.json` was added as an evidence-preservation measure but the reader side was not updated.
+- **Impact:** Planner failures produce opaque `RuntimeError` messages without the underlying gateway evidence being visible to users.
+- **Recommended remediation:** Add `planner_capture: dict[str, Any]` field to `Snapshot`; update `load_snapshot` and `_load_zip_bytes` to read `planner_capture.json`; surface planner info in `inspect_run` output and TUI overview.
+- **Required tests:** Test that `load_snapshot` reads `planner_capture.json` when present.
+- **Regression risks:** Low — reader-side addition.
+- **Dependencies or blockers:** None.
+- **Acceptance criteria:**
+  - [ ] `Snapshot` has `planner_capture` field
+  - [ ] `load_snapshot` reads `planner_capture.json`
+  - [ ] Planner diagnostics visible in TUI/inspect output
 
 ---
 
-### BUG-4 — Transient 5xx Errors Not Retried
+### AUD-P2-003 — Stale `materialize-fixture.yml` references deleted `.b64.*` files
 
-**File:** `src/benchdeck/openai_gateway.py`, function `_is_retryable`, lines 55–60
-
-**Root cause:** The function returns `False` for any category in `_NON_RETRYABLE`. If `ErrorCategory.PROVIDER` is in `_NON_RETRYABLE`, then HTTP 500/502/503 (which are classified as `PROVIDER`) are never retried.
-
-First, verify by reading `_NON_RETRYABLE` definition in `openai_gateway.py`. If `PROVIDER` is listed there, apply this fix:
-
-**Before:**
-```python
-def _is_retryable(category: ErrorCategory, http_status: int | None) -> bool:
-    if category in _NON_RETRYABLE:
-        return False
-    if http_status is not None and 400 <= http_status < 500:
-        return http_status in {408, 429}
-    return True
-```
-
-**After:**
-```python
-def _is_retryable(category: ErrorCategory, http_status: int | None) -> bool:
-    # Transient 5xx errors are always retryable regardless of category classification.
-    if http_status is not None and 500 <= http_status < 600:
-        return True
-    if category in _NON_RETRYABLE:
-        return False
-    if http_status is not None and 400 <= http_status < 500:
-        return http_status in {408, 429}
-    return True
-```
-
-**Verification:** Add tests in `test_gateway.py` for:
-- HTTP 500 → retried (should now pass)
-- HTTP 502 → retried (should now pass)
-- HTTP 503 → retried (should now pass)
-- HTTP 400 → not retried (must still pass)
-- HTTP 401 → not retried (must still pass)
-- HTTP 403 → not retried (must still pass)
+- **Severity:** P2
+- **Confidence:** Confirmed
+- **Affected files:**
+  - `.github/workflows/materialize-fixture.yml:7` — trigger path `fixtures/original_run.zip.b64.*`
+  - `.github/workflows/materialize-fixture.yml:22` — `cat fixtures/original_run.zip.b64.* | base64 --decode`
+  - `.github/workflows/materialize-fixture.yml:25` — `rm fixtures/original_run.zip.b64.*`
+- **Observed behavior:** The workflow is configured to decode Base64-segmented source files into a ZIP, verify a checksum, and commit. The source `.b64.*` files no longer exist — only `original_run.zip` is checked in directly. The workflow is dead code.
+- **Expected behavior:** Either remove the workflow, or replace it with a fixture validation workflow that runs `benchdeck inspect` on the committed fixture.
+- **Root cause:** The `.b64.*` segmented fixture storage was replaced by a directly committed ZIP, but the CI workflow was not updated.
+- **Impact:** CI infrastructure debt. No functional impact since the trigger paths don't match any existing files.
+- **Recommended remediation:** Remove the workflow file, or replace it with a fixture-integrity validation job that checks `fixtures/original_run.zip` with `benchdeck inspect`.
+- **Required tests:** None.
+- **Regression risks:** None.
+- **Dependencies or blockers:** AUD-P2-004 (fixture must be valid before adding strict CI validation).
+- **Acceptance criteria:**
+  - [ ] `materialize-fixture.yml` either removed or updated to validate the existing fixture
 
 ---
 
-### DESIGN-1 — Default CLI Model Does Not Exist
+### AUD-P2-004 — Bundled fixture is known-corrupt; Phase 7 v2 replacement not done
 
-**File:** `src/benchdeck/cli.py`, lines 23–24
-
-`"gpt-5.5"` is not a valid OpenAI model identifier. Any user who runs `benchdeck run --agent-a foo.md` without specifying `--model` receives an immediate API error with no helpful context.
-
-**Before:**
-```python
-run.add_argument("--model", default="gpt-5.5")
-run.add_argument("--judge-model", default="gpt-5.5")
-```
-
-**After:**
-```python
-run.add_argument("--model", default="gpt-4o")
-run.add_argument("--judge-model", default="gpt-4o")
-```
-
-Also search `README.md` for `gpt-5.5` and replace all occurrences with `gpt-4o`.
-
----
-
-### DESIGN-2 — `run_id` Collision Risk
-
-**File:** `src/benchdeck/models.py`, function `_new_run_id`, line 701
-
-Second-precision timestamps mean two runs started in the same second share an identical `run_id`, which will silently corrupt any system that uses `run_id` as a unique key.
-
-**Before:**
-```python
-def _new_run_id() -> str:
-    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-```
-
-**After:**
-```python
-import secrets  # add to imports at top of file if not already present
-
-def _new_run_id() -> str:
-    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    suffix = secrets.token_hex(4)  # 8 hex chars, 32 bits of entropy
-    return f"{ts}-{suffix}"
-```
-
-Check that `secrets` is already imported or add it. Do not change the timestamp format — only append the suffix.
+- **Severity:** P2
+- **Confidence:** Confirmed
+- **Affected files:** `fixtures/original_run.zip`
+- **Observed behavior:** `benchdeck inspect fixtures/original_run.zip` reports 5 warnings:
+  - Only 9 of 10 planned cases were judged
+  - Case 9 stores candidate output as judge_transcript
+  - Case 10 has an empty final output
+  - Run is marked completed despite blocked/missing required coverage
+  - Tally for score_scale fails JSON Schema validation (`'score_scale' is a required property`)
+- **Expected behavior:** `OPENCODE_IMPLEMENTATION_PHASES.md` Phase 7 calls for replacing the fixture with a deterministic, schema-valid v2 fixture with reconciled counts and hashes.
+- **Root cause:** The fixture was produced by an older version of the runner that had the now-fixed bugs. It was retained intentionally for regression testing but is not suitable as a reference artifact.
+- **Impact:** Users inspecting the bundled fixture see warnings that are caused by old runner bugs, not by current defects.
+- **Recommended remediation:** Create a deterministic fixture-builder script (`scripts/build_v2_fixture.py`); generate a valid v2 fixture with complete plan, execution ledger, judgments, tally, verdict, metadata, and manifest; replace `fixtures/original_run.zip`; update tests in `test_inspect.py` and `test_tui_loading.py` that depend on the current warning list.
+- **Required tests:** Test that new fixture passes `benchdeck inspect` with 0 warnings; test that TUI renders it correctly.
+- **Regression risks:** Low — tests that assert on fixture warnings must be updated.
+- **Dependencies or blockers:** None.
+- **Acceptance criteria:**
+  - [ ] New v2 fixture passes `benchdeck inspect` with zero warnings
+  - [ ] All dependent tests updated
+  - [ ] Fixture can be built deterministically via script
 
 ---
 
-### DESIGN-3 — `prompt_version` Mismatch in BenchmarkPlan
+### AUD-P2-005 — No output directory isolation; repeated runs silently overwrite
 
-**File:** `src/benchdeck/models.py`, line 164
-
-`BenchmarkPlan.prompt_version` defaults to `"1"` but `PLANNER_SCHEMA_VERSION` in `prompts.py` is `"2"`. Every generated plan records stale provenance.
-
-**Before:**
-```python
-prompt_version: str = "1"
-```
-
-**After:**
-```python
-prompt_version: str = "2"
-```
-
-After applying: search `test_models.py` and `test_prompts.py` for any assertion that hardcodes the expected value `"1"` for `prompt_version` and update those assertions to `"2"`.
-
----
-
-### DESIGN-4 — Missing `OPENAI_API_KEY` Pre-flight Check
-
-**File:** `src/benchdeck/cli.py`
-
-Add an `import os` at the top of the file (if not present) and add a check at the start of the `run` command handler, before `BenchmarkRunner` is instantiated:
-
-```python
-if args.command == "run":
-    import os
-    if not os.environ.get("OPENAI_API_KEY"):
-        sys.stderr.write(
-            "Error: OPENAI_API_KEY environment variable is not set.\n"
-            "Set it before running: export OPENAI_API_KEY=sk-...\n"
-        )
-        return 1
-    from .runner import BenchmarkRunner
-    ...
-```
-
-Note: `os` is already imported in many Python files by convention; check if it is already at the top of `cli.py` before adding a duplicate import.
+- **Severity:** P2
+- **Confidence:** Confirmed
+- **Affected files:**
+  - `src/benchdeck/runner.py:69` — `self.store = ArtifactStore(output_dir)` writes directly to the user-specified directory
+  - `src/benchdeck/storage.py:23-28` — `ArtifactStore.__init__` creates root dir but never checks for prior content
+- **Observed behavior:** Running a benchmark twice to the same output directory silently overwrites prior run artifacts. The test `test_output_directory_with_prior_run_silently_produces_mixed_run` in `tests/test_runner.py:329-369` explicitly documents this current behavior — it sets up prior files, runs a new run, and verifies the old files are overwritten with new content.
+- **Expected behavior:** Per `OPENCODE_IMPLEMENTATION_PHASES.md` Phase 4: generate a unique `run_id` at start; write into `<output_root>/<run_id>/`; reject an existing non-empty run directory unless `--resume` or `--overwrite` is explicit.
+- **Root cause:** This is a planned feature (Phase 4) not yet implemented.
+- **Impact:** Data loss if a user accidentally reuses a previous output directory path.
+- **Recommended remediation:** Implement Phase 4 run isolation: write into `output_dir / run_id` subdirectory (using `RunMetadata._new_run_id()` which already exists with microsecond + hex suffix); reject if the directory exists and is non-empty without `--overwrite` CLI flag.
+- **Required tests:** Test that duplicate run to same dir without `--overwrite` raises an error; test that `--overwrite` cleanly replaces stale data.
+- **Regression risks:** Medium — changes output directory structure; requires `load_snapshot` to handle nested `run_id` subdirectories.
+- **Dependencies or blockers:** Depends on `RunMetadata.run_id` (already implemented).
+- **Acceptance criteria:**
+  - [ ] Runs create output in `<output_root>/<run_id>/`
+  - [ ] Non-empty existing directories rejected without `--overwrite`
+  - [ ] `--overwrite` flag available on `run` subcommand
+  - [ ] TUI and inspector can navigate `run_id` subdirectories
 
 ---
 
-### DESIGN-5 — Raw Traceback on Infrastructure Failure
+### AUD-P2-006 — No runner integration test for comparison mode with fake gateways
 
-**File:** `src/benchdeck/cli.py`
-
-`runner.run()` re-raises on infrastructure failures. The exception propagates to the user as a raw Python traceback with no context. Wrap the call:
-
-```python
-try:
-    status = runner.run()
-except Exception as exc:
-    sys.stderr.write(f"Error: benchmark run failed — {exc}\n")
-    return 1
-print(status.value)
-return 0 if status.value == "completed" else 2
-```
-
----
-
-### DEAD-1 — Three Unused Enums in `models.py`
-
-**File:** `src/benchdeck/models.py`
-
-The following three enum classes are defined but have **zero references** anywhere in the entire codebase (source or tests):
-
-- `BenchmarkMode` (values: `SINGLE`, `COMPARISON`)
-- `Stage` (values: `PLANNER`, `AGENT`, `JUDGE`)
-- `ClarificationState` (values: `FINAL_ANSWER`, `CLARIFICATION_REQUEST`, `REFUSAL`, `ERROR`)
-
-**Before removing:** Run the following and confirm zero results:
-```bash
-grep -r "BenchmarkMode\|Stage\.\|ClarificationState" src/ tests/
-```
-
-If zero results, delete all three class definitions. Do not remove `ClarificationExpectation` — that one is used.
+- **Severity:** P2
+- **Confidence:** Confirmed
+- **Affected files:** `tests/test_runner.py:290-327`
+- **Observed behavior:** The test suite has a single-agent runner integration test (`test_single_agent_run_completes_with_fake_gateways`) but no corresponding two-agent (comparison mode) integration test. Comparison mode scoring, tally building, verdict construction, and markdown output are tested at the unit level in `test_reporting.py` but the full runner pipeline with `agent_b_path` and fake gateways for both agents is never exercised end-to-end.
+- **Expected behavior:** A regression test exercising `BenchmarkRunner` with `agent_b_path`, two sets of agent scripts (16 calls), judge scripts (16 calls), and asserting that `final_verdict.json` contains a `comparison` block with `valid: true`.
+- **Root cause:** Comparison mode was added to the runner during Phase 1 but integration test coverage did not follow.
+- **Impact:** Regressions in comparison mode runner flow (e.g. incorrect agent label propagation, missing per-agent tally) could be introduced without test detection.
+- **Recommended remediation:** Add an integration test in `tests/test_runner.py` that:
+  1. Creates agent A and B paths in `tmp_path`
+  2. Supplies fake gateways with scripts for planner (1 call), agent A (8 calls), agent B (8 calls), judge A (8 calls), judge B (8 calls)
+  3. Runs `BenchmarkRunner` with both `agent_a_path` and `agent_b_path`
+  4. Asserts `RunStatus.COMPLETED`
+  5. Verifies `summary_tally.json` has both agent entries
+  6. Verifies `final_verdict.json` has a `comparison` block with `valid: true`
+- **Required tests:** `test_comparison_run_completes_with_fake_gateways` in `tests/test_runner.py`.
+- **Regression risks:** None — additive test.
+- **Dependencies or blockers:** None.
+- **Acceptance criteria:**
+  - [ ] Integration test exercises full comparison mode through runner
+  - [ ] Test verifies `summary_tally.json` has both `agent_a` and `agent_b` entries
+  - [ ] Test verifies `comparison` verdict is present and valid
 
 ---
 
-### DEAD-2 — Unused `REQUIRED_FAMILIES` Constant
+### AUD-P3-001 — `_sum_tally_int` duplicated in `tui.py` and `inspect.py`
 
-**File:** `src/benchdeck/scoring.py`, line 18
-
-**Before removing:** Confirm zero references:
-```bash
-grep -r "REQUIRED_FAMILIES" src/ tests/
-```
-
-If zero results (the constant is defined there, so `scoring.py` itself will appear — that's expected), delete the line. The value is computed inline wherever it's needed via `Family.required_families()`.
-
----
-
-### DEAD-3 — Unused `generate_structured()` Method
-
-**File:** `src/benchdeck/openai_gateway.py`
-
-**Before removing:** Confirm zero callers:
-```bash
-grep -r "generate_structured" src/ tests/
-```
-
-If the method definition itself is the only result, remove the method from `OpenAIGateway`. Also check `tests/fakes.py` — if `FakeGateway` implements a corresponding stub for `generate_structured`, remove that stub too.
+- **Severity:** P3
+- **Confidence:** Confirmed
+- **Affected files:**
+  - `src/benchdeck/tui.py:312-317`
+  - `src/benchdeck/inspect.py:91-96`
+- **Observed behavior:** Identical 7-line helper function exists in two modules. Both iterate over tally dict values and sum an integer key. The TUI copy (`tui.py:312`) is also dead code — it is defined but never called within the TUI module.
+- **Expected behavior:** Single canonical definition, imported by both consumers.
+- **Root cause:** The `loader.py` extraction during Phase 1 moved shared loading logic but did not consolidate this helper.
+- **Impact:** Maintenance burden; changes must be synchronized. The TUI copy adds unused code.
+- **Recommended remediation:** Move `_sum_tally_int` to `loader.py` or `scoring.py`; import in `tui.py` and `inspect.py`; remove the dead TUI copy.
+- **Required tests:** None needed (existing tests cover both).
+- **Regression risks:** Low.
+- **Acceptance criteria:**
+  - [ ] Single definition of `_sum_tally_int` exists
+  - [ ] Both `tui.py` and `inspect.py` import from canonical location
 
 ---
 
-### DEAD-4 — Unused `JUDGE_PROMPT_VERSION` Constant
+### AUD-P3-002 — `results_to_list` silently returns `[]` on type mismatch
 
-**File:** `src/benchdeck/prompts.py`, line 17
-
-**Before removing:** Confirm zero references:
-```bash
-grep -r "JUDGE_PROMPT_VERSION" src/ tests/
-```
-
-If the constant definition is the only result, delete the line `JUDGE_PROMPT_VERSION = "2"`.
-
----
-
-### DEAD-5 — Unused `_external_*_gateway` Attributes
-
-**File:** `src/benchdeck/runner.py`, lines 63–64
-
-```python
-self._external_agent_gateway = agent_gateway   # set but never read
-self._external_judge_gateway = judge_gateway   # set but never read
-```
-
-The functional attributes are `self.agent_gateway` and `self.judge_gateway` on the lines immediately below. The `_external_*` variants serve no purpose.
-
-**Before removing:** Confirm no other code reads these:
-```bash
-grep -r "_external_agent_gateway\|_external_judge_gateway" src/ tests/
-```
-
-If only the assignment lines appear, delete both lines.
+- **Severity:** P3
+- **Confidence:** Confirmed
+- **Affected files:** `src/benchdeck/scoring.py:93-96`
+- **Observed behavior:** `results_to_list` takes `obj: object`, checks `isinstance(obj, list)`, and returns `obj` if true, else `[]`. If the caller passes a non-list value (e.g. a dict from a malformed `run_results.json`), the function silently returns `[]` and downstream code processes zero results with no diagnostic.
+- **Expected behavior:** Either raise `TypeError` or log a warning when a non-list is encountered so structural errors in the results artifact surface.
+- **Impact:** Can mask serialization or structural bugs in `run_results.json`.
+- **Recommended remediation:** Log a warning via the module logger when non-list input is received.
+- **Required tests:** Add a test asserting behavior on dict/tuple/None inputs.
+- **Regression risks:** Low — function is only called in `collect_terminal_keys`.
+- **Acceptance criteria:**
+  - [ ] `results_to_list` warns on non-list input
+  - [ ] Existing tests continue to pass
 
 ---
 
-### DEAD-6 — Redundant Gate Override After `model_validate()`
+### AUD-P3-003 — README hardcodes stale test count badge
 
-**File:** `src/benchdeck/runner.py`
-
-After the `judgment = CaseJudgment.model_validate(payload)` call, there are lines that re-apply the gate-fail logic:
-
-```python
-if judgment.gate_check.status == GateStatus.FAIL:
-    judgment.overall_rating = Rating.FAIL
-```
-
-The `CaseJudgment._gate_fail_forces_fail` model validator in `models.py` already enforces this constraint during `model_validate()`. These lines are dead code.
-
-Search for this pattern and remove just these two lines. Do not touch the `model_validate()` call or anything around it.
+- **Severity:** P3
+- **Confidence:** Confirmed
+- **Affected files:** `README.md:7`
+- **Observed behavior:** The badge URL `https://img.shields.io/badge/tests-161%20passed-brightgreen.svg` claims 161 tests passed. Actual test count is 165. The badge is a static image URL with no dynamic update mechanism.
+- **Expected behavior:** Update count to 165 or replace with a dynamic CI badge.
+- **Impact:** Misleading for users and contributors evaluating test coverage.
+- **Recommended remediation:** Update the badge to reflect 165 tests, or replace with a dynamic shield.io badge linked to the CI workflow.
+- **Required tests:** None.
+- **Acceptance criteria:**
+  - [ ] Badge count matches actual test count or is dynamic
 
 ---
 
-### STYLE-1 — `object.__setattr__` on a Non-Frozen Model
+### AUD-P3-004 — `IMPLEMENTATION_CHECKLIST.md` TUI screen item marked complete prematurely
 
-**File:** `src/benchdeck/models.py`, inside `CaseJudgment._gate_fail_forces_fail` validator
-
-`object.__setattr__` is only necessary for frozen Pydantic models (`model_config = ConfigDict(frozen=True)`). `CaseJudgment` is not frozen. A plain attribute assignment is identical in behavior and clearer in intent.
-
-**Before:**
-```python
-object.__setattr__(self, "overall_rating", Rating.FAIL)
-```
-
-**After:**
-```python
-self.overall_rating = Rating.FAIL
-```
+- **Severity:** P3
+- **Confidence:** Confirmed
+- **Affected files:** `IMPLEMENTATION_CHECKLIST.md:23-28`
+- **Observed behavior:** The checklist marks the P2 TUI section item `[x] Overview, case list, case detail, and help screens. (BUG-1 and BUG-2 resolved ...)` as complete. However AUD-P2-001 (infrastructure error display) and AUD-P2-002 (planner capture display) affect these same screens. Additionally, Phase 6 of `OPENCODE_IMPLEMENTATION_PHASES.md` calls for further TUI hardening (agent filter toggle, side-by-side comparison, parse/validation error display, ZIP safety hardening).
+- **Expected behavior:** The item should remain `[ ]` or be qualified with remaining work items.
+- **Impact:** Misleading planning artifact; creates false impression of completion.
+- **Recommended remediation:** Update the checklist item to note remaining TUI work items.
+- **Required tests:** None.
+- **Acceptance criteria:**
+  - [ ] Checklist accurately reflects current TUI status
 
 ---
 
-### STYLE-2 — Inline Imports Inside Test Functions
+### AUD-P3-005 — Previous AGENT_HANDOFF.md was completely stale
 
-**File:** `tests/test_tui_loading.py`
-
-Imports of `BenchDeckTUI` (and any other `benchdeck` symbols) appear inside individual test method bodies. Move all such imports to the module-level import block at the top of the file per PEP 8.
-
-Search for the pattern:
-```bash
-grep -n "^\s*from benchdeck" tests/test_tui_loading.py
-```
-
-Move each result to the top-level import section.
+- **Severity:** P3
+- **Confidence:** Confirmed
+- **Affected files:** `AGENT_HANDOFF.md` (old version, now replaced)
+- **Observed behavior:** The previous AGENT_HANDOFF.md listed 22 tasks (BUG-1 through DOCS-4) across bugs, dead code, design issues, style cleanup, and documentation. All 22 have been resolved in the current codebase. The file served as a misleading inventory of non-existent defects.
+- **Resolution:** This document replaces the stale AGENT_HANDOFF.md.
+- **Acceptance criteria:**
+  - [x] Old stale AGENT_HANDOFF.md replaced with this current audit
 
 ---
 
-### DOCS-1 — IMPLEMENTATION_CHECKLIST.md Accuracy
+## Execution Plan
 
-**File:** `IMPLEMENTATION_CHECKLIST.md`
+Implementation phases are ordered by impact and dependency. P2 findings are addressed first; P3 findings can be batched independently.
 
-The P2 TUI section marks this item as complete:
-```
-- [x] Overview, case list, case detail, and help screens.
-```
+### Phase 1 — Consume infrastructure errors and planner capture in loader/TUI/inspector
 
-BUG-1 (progress always 0/0) and BUG-2 (judgment overwrite in comparison mode) are bugs in exactly those screens. This item should not be marked complete until both bugs are fixed.
+**Objective:** Infrastructure error details and planner capture evidence become visible through the loader, TUI, and inspector.
 
-**Fix:** Change the line to:
-```
-- [ ] Overview, case list, case detail, and help screens. (blocked: see AGENT_HANDOFF.md BUG-1, BUG-2)
-```
+**Included findings:** AUD-P2-001, AUD-P2-002
 
-After BUG-1 and BUG-2 are resolved and verified, re-mark this `[x]`.
+**Files expected to change:**
+- `src/benchdeck/loader.py` — add fields to `Snapshot`, update `load_snapshot` and `_load_zip_bytes`
+- `src/benchdeck/inspect.py` — enumerate per-infrastructure-error warnings
+- `src/benchdeck/tui.py` — display infrastructure error details in case detail view
 
----
+**Tasks:**
+- [ ] Add `infrastructure_errors: list[dict[str, Any]]` and `planner_capture: dict[str, Any]` fields to `Snapshot` dataclass in `loader.py`
+- [ ] Update `load_snapshot` directory reader to load `infrastructure_errors.json` and `planner_capture.json`
+- [ ] Update `_load_zip_bytes` defaults dict to include the two new artifact keys
+- [ ] Update `_load_zip_bytes` loaded results to populate new Snapshot fields
+- [ ] Update `inspect_run` to enumerate infrastructure error records as warnings
+- [ ] Update TUI `_detail()` to show infrastructure error details for the selected case
+- [ ] Add tests for loader reading new artifacts
+- [ ] Add test for inspect reporting infrastructure errors
 
-### DOCS-2 — OPENCODE_IMPLEMENTATION_PHASES.md Stale Baseline
-
-**File:** `OPENCODE_IMPLEMENTATION_PHASES.md`, KNOWN BASELINE section (approximately lines 40–46)
-
-The current text states claims that are no longer true. Replace the KNOWN BASELINE block with accurate current state:
-
-**Current (stale):**
-```
-KNOWN BASELINE
-- Existing tests are minimal.
-- Core runner and OpenAI gateway currently have no meaningful coverage.
-- Strict mypy reports errors in the gateway and TUI.
-- Formatting check is not clean.
-- The bundled frozen plan is invalid.
-- Comparison-mode data is not agent-scoped.
-```
-
-**Replacement:**
-```
-KNOWN BASELINE (updated 2026-06-11 after full audit)
-- 145 tests pass across gateway, runner, models, prompts, reporting, scoring, storage, and TUI.
-- ruff check, ruff format --check, and mypy --strict all pass clean.
-- Known runtime bugs remain: see AGENT_HANDOFF.md for BUG-1 through BUG-4.
-- P1 items not yet implemented: multi-judge aggregation, JSON Schema manifest validation.
-- P2 items not yet implemented: TUI subprocess launch/cancel, case Markdown export.
-- P3 items not yet implemented: package release publishing, signed artifacts, SBOM.
-```
-
----
-
-### DOCS-3 — CHANGELOG.md Known Issues
-
-**File:** `CHANGELOG.md`
-
-Add a Known Issues subsection under the `[0.1.0]` entry:
-
-```markdown
-### Known Issues
-
-- **TUI progress bar always shows 0/0** — `_overview()` reads wrong field names from `RunMetadata`; the correct names are `cases_in_plan` and `executions_judged` (BUG-1).
-- **TUI case list drops second agent in comparison mode** — judgment dict is keyed on `case_id` only; Agent B's results silently overwrite Agent A's (BUG-2).
-- **Default CLI model `gpt-5.5` does not exist** — all users must supply `--model` explicitly or the first API call fails (DESIGN-1; fixed in next release).
-- **HTTP 5xx transient errors are not retried** — 500/502/503 responses from the provider are classified as non-retryable and fail immediately (BUG-4).
-```
-
----
-
-### DOCS-4 — README.md Model Name
-
-**File:** `README.md`
-
-Search for all occurrences of `gpt-5.5`:
-```bash
-grep -n "gpt-5.5" README.md
-```
-
-Replace every occurrence with `gpt-4o`. This ensures that any copy-paste command from the README actually works.
-
----
-
-## Final Verification Sequence
-
-After all tasks above are marked `[x]`, run this full sequence and confirm every line passes:
-
+**Validation commands:**
 ```bash
 ruff check .
 ruff format --check .
-python -m mypy --no-incremental src/benchdeck
-pytest -q
+mypy --no-incremental src/benchdeck --ignore-missing-imports
+pytest -q tests/test_tui_loading.py tests/test_inspect.py
 ```
 
-Expected outcome:
-- `ruff check .` → `All checks passed!`
-- `ruff format --check .` → all files formatted
-- `mypy` → `Success: no issues found in 12 source files`
-- `pytest -q` → all tests passed (count must be >= 145; new tests added for BUG-4 may increase the count)
+**Acceptance criteria:**
+- [ ] `Snapshot` exposes `infrastructure_errors` and `planner_capture`
+- [ ] `inspect_run` warns on individual infrastructure errors
+- [ ] TUI detail view shows infrastructure error information
+- [ ] No regression in existing tests
+
+**Rollback considerations:** Revert the Snapshot field additions and reader changes. The runner writes the artifacts unchanged — only the reader side is modified.
 
 ---
 
-## Items Intentionally Deferred (Out of Scope)
+### Phase 2 — Add comparison mode runner integration test
 
-The following were identified during the audit but are **not addressed here** — they are non-breaking style concerns or genuinely new features:
+**Objective:** Full runner pipeline in comparison mode is covered by an integration test using fake gateways.
 
-- `_execute()` callback parameters typed as `Any` instead of `Callable` — mypy passes, low risk
-- `runner.py` loop variables typed as `dict[str, Any]` instead of concrete model types — mypy passes
-- `build_final_verdict` legacy `dict` interface — only used in tests, low risk
-- Empty-response backoff uses a separate counter from error-retry backoff — edge case, no user-visible impact in practice
-- `_validate_plan` complexity (14 branches) — functional, not causing failures
-- Magic HTTP status code integer literals without named constants — style only
-- ZIP duplicate basename silent-overwrite (underlying behavior) — new feature, out of scope
-- Unimplemented P1/P2/P3 checklist items — new features, out of scope
+**Included findings:** AUD-P2-006
+
+**Files expected to change:**
+- `tests/test_runner.py` — add integration test
+
+**Tasks:**
+- [ ] Add `test_comparison_run_completes_with_fake_gateways` test in `tests/test_runner.py`
+- [ ] Create two agent files in `tmp_path`
+- [ ] Provide planner fake (1 call), agent A fake (8 text responses), agent B fake (8 text responses), judge A fake (8 judgment JSON responses), judge B fake (8 judgment JSON responses)
+- [ ] Assert `RunStatus.COMPLETED`
+- [ ] Verify `summary_tally.json` has both `agent_a` and `agent_b` entries
+- [ ] Verify `final_verdict.json` has a `comparison` block with `valid: true`
+
+**Validation commands:**
+```bash
+pytest -q tests/test_runner.py -k comparison
+```
+
+**Acceptance criteria:**
+- [ ] Comparison mode runner flow tested end-to-end
+- [ ] Artifacts correctly attributed to both agents
+
+**Rollback considerations:** Additive test only; no production code modified.
+
+---
+
+### Phase 3 — Clean up CI workflow, replace fixture, implement output directory isolation
+
+**Objective:** Remove dead CI workflow, replace corrupted fixture with deterministic v2 fixture, implement output directory isolation.
+
+**Included findings:** AUD-P2-003, AUD-P2-004, AUD-P2-005
+
+**Files expected to change:**
+- `.github/workflows/materialize-fixture.yml` — removed or replaced with fixture validation
+- `fixtures/original_run.zip` — replaced with v2 fixture
+- `scripts/build_v2_fixture.py` — new fixture builder script
+- `src/benchdeck/runner.py` — subdirectory isolation logic
+- `src/benchdeck/cli.py` — add `--overwrite` flag
+- `src/benchdeck/loader.py` — handle `run_id` subdirectories
+- `tests/test_inspect.py` — update for new fixture
+- `tests/test_tui_loading.py` — update for new fixture
+- `tests/test_runner.py` — add isolation/overwrite tests
+
+**Tasks:**
+- [ ] Remove or replace `materialize-fixture.yml` with fixture validation workflow
+- [ ] Create `scripts/build_v2_fixture.py` that generates a valid, deterministic v2 fixture
+- [ ] Replace `fixtures/original_run.zip` with newly built v2 fixture
+- [ ] Update `test_bundled_fixture_loads` and `test_original_run_defects_are_detected` to match new fixture
+- [ ] Implement `--overwrite` CLI flag on `run` subcommand
+- [ ] Modify `BenchmarkRunner` to write into `<output_dir>/<run_id>/`
+- [ ] Add pre-run check rejecting non-empty existing output dirs without `--overwrite`
+- [ ] Update `load_snapshot` to handle auto-discovery of `run_id` subdirectory
+- [ ] Add tests for isolation and overwrite behavior
+
+**Validation commands:**
+```bash
+ruff check .
+ruff format --check .
+mypy --no-incremental src/benchdeck --ignore-missing-imports
+pytest -q
+python scripts/build_v2_fixture.py
+benchdeck inspect fixtures/original_run.zip
+```
+
+**Acceptance criteria:**
+- [ ] New fixture passes `benchdeck inspect` with zero warnings
+- [ ] `materialize-fixture.yml` is removed or updated
+- [ ] Repeated runs to same dir without `--overwrite` raises error
+- [ ] `--overwrite` cleanly replaces previous run data
+- [ ] `load_snapshot` handles `run_id` subdirectories
+- [ ] TUI can load a run from a `run_id` subdirectory
+
+**Rollback considerations:** This changes output directory structure. Roll back by reverting the subdirectory change in runner and reverting loader changes. Users with existing output directories would need to move files manually.
+
+---
+
+### Phase 4 — Minor quality fixes (duplication, type safety, documentation)
+
+**Objective:** Resolve duplication issues, improve type safety, update stale documentation.
+
+**Included findings:** AUD-P3-001, AUD-P3-002, AUD-P3-003, AUD-P3-004
+
+**Files expected to change:**
+- `src/benchdeck/scoring.py` — consolidate `_sum_tally_int`, improve `results_to_list`
+- `src/benchdeck/tui.py` — import consolidated helper, remove local dead copy
+- `src/benchdeck/inspect.py` — import consolidated helper
+- `README.md` — update test count badge
+- `IMPLEMENTATION_CHECKLIST.md` — update TUI item status
+
+**Tasks:**
+- [ ] Move `_sum_tally_int` to `loader.py` or `scoring.py` and import at both call sites
+- [ ] Remove the dead local copy of `_sum_tally_int` from `tui.py`
+- [ ] Add warning log to `results_to_list` when non-list input is received
+- [ ] Update README test count badge (165 or dynamic)
+- [ ] Update `IMPLEMENTATION_CHECKLIST.md` TUI item to note remaining work
+
+**Validation commands:**
+```bash
+ruff check .
+ruff format --check .
+mypy --no-incremental src/benchdeck --ignore-missing-imports
+pytest -q
+```
+
+**Acceptance criteria:**
+- [ ] Single canonical definition of `_sum_tally_int`
+- [ ] `results_to_list` warns on bad input
+- [ ] README badge is accurate
+- [ ] Checklist reflects current state
+
+**Rollback considerations:** All changes are cosmetic or additive — low risk to revert.
+
+---
+
+## Final Verification Checklist
+
+- [ ] `ruff check .` — All checks passed
+- [ ] `ruff format --check .` — All files formatted
+- [ ] `mypy --no-incremental src/benchdeck --ignore-missing-imports` — No issues
+- [ ] `pytest -q` — All tests pass (expected >= 165)
+- [ ] `pytest --cov=benchdeck --cov-branch --cov-report=term-missing` — Coverage >= 68%
+- [ ] `python -m build` — Wheel and sdist build successfully
+- [ ] `benchdeck inspect fixtures/original_run.zip` — Zero warnings on new v2 fixture
+- [ ] Manual TUI smoke test with a completed run directory
+
+---
+
+## Deferred, Blocked, and Rejected Findings
+
+| Finding ID | Decision | Reason | Risk | Prerequisite | Recommended next action |
+|------------|----------|--------|------|-------------|------------------------|
+| Low gateway coverage (42%) | Deferred | `OpenAIGateway` requires live API; tested via `FakeGateway` | Low | None | Consider HTTP replay/VCR tests |
+| Low TUI coverage (14%) | Deferred | curses-based TUI not easily testable in CI | Medium | None | Add snapshot-based TUI rendering tests |
+| No security scanning | Deferred | Not yet configured | Low | Add `bandit` + `safety` to dev deps | Add to `.github/workflows/ci.yml` |
+| No wheel smoke test | Deferred | Not yet automated | Low | Add CI step | Add to CI workflow |
+| Multi-judge aggregation | Deferred | Documented planned feature (P1) | Medium | Phase 5 | Scope as separate feature |
+| Budget/cost controls | Deferred | Documented planned feature (P1) | Medium | Phase 5 | Scope as separate feature |
+| Resume support | Deferred | Documented planned feature (P1) | High for production | Phase 4 | Scope as separate feature |
+| TUI run control | Deferred | Documented planned feature (P2) | Low | Phase 6 | Scope as separate feature |
+| Package release on PyPI | Deferred | Documented planned feature (P3) | Low | Phase 7 | Scope as separate feature |
+
+---
+
+## Open Questions and Limitations
+
+1. **OpenAI SDK uses `responses.create()` not `chat.completions.create()`.** The gateway uses the Responses API (`client.responses.create`) rather than Chat Completions. The README examples simply say `--model gpt-4o-mini` without mentioning the API surface. Users unfamiliar with the Responses API may have incorrect expectations.
+
+2. **`_new_run_id` collision probability.** The function uses microsecond timestamp + 4-byte hex suffix (~32 bits of entropy beyond the timestamp). This is adequate for single-host operation but insufficient for distributed or very-high-throughput scenarios.
+
+3. **`default_headers=config.extra_headers or None` coalesces empty dict to None.** In `openai_gateway.py:200`, if `extra_headers` is `{}`, the `or None` makes it `None`. This may suppress intentional empty header overrides — though no callers currently pass empty dicts.
+
+4. **`_sum_tally_int` in `tui.py` is defined but never called.** The TUI copy at `tui.py:312` has zero call-sites within the module. It is dead code.

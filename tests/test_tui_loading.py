@@ -257,3 +257,141 @@ def test_malformed_plan_json_defaults_to_empty() -> None:
     tui.snapshot.plan = {"not_cases": 123}
     cases_from_missing = tui._cases()
     assert cases_from_missing == [], "TUI silently defaults to empty when plan has no 'cases' key"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# New artifact loading — infrastructure_errors and planner_capture
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_load_snapshot_directory_reads_infrastructure_errors(tmp_path: Path) -> None:
+    """load_snapshot reads infrastructure_errors.json from a directory."""
+    run_dir = tmp_path / "infra_run"
+    run_dir.mkdir()
+    (run_dir / "infrastructure_errors.json").write_text(
+        json.dumps(
+            [
+                {
+                    "case_id": 3,
+                    "agent_label": "agent_a",
+                    "case_title": "Case 3",
+                    "stage": "agent",
+                    "error_type": "RuntimeError",
+                    "message": "Connection reset",
+                }
+            ]
+        )
+    )
+    snapshot = load_snapshot(run_dir)
+    assert len(snapshot.infrastructure_errors) == 1
+    assert snapshot.infrastructure_errors[0]["case_id"] == 3
+    assert snapshot.infrastructure_errors[0]["error_type"] == "RuntimeError"
+
+
+def test_load_snapshot_directory_reads_planner_capture(tmp_path: Path) -> None:
+    """load_snapshot reads planner_capture.json from a directory."""
+    run_dir = tmp_path / "planner_run"
+    run_dir.mkdir()
+    (run_dir / "planner_capture.json").write_text(
+        json.dumps({"value": {"mode": "single"}, "total_http_attempts": 1})
+    )
+    snapshot = load_snapshot(run_dir)
+    assert snapshot.planner_capture["value"]["mode"] == "single"
+    assert snapshot.planner_capture["total_http_attempts"] == 1
+
+
+def test_zip_loading_reads_infrastructure_errors() -> None:
+    """_load_zip_bytes loads infrastructure_errors.json from ZIP."""
+    data = make_zip_bytes(
+        {
+            "run_metadata.json": {"status": "inconclusive"},
+            "infrastructure_errors.json": [
+                {"case_id": 5, "agent_label": "agent_b", "stage": "judge"}
+            ],
+        }
+    )
+    snapshot = _load_zip_bytes(data)
+    assert len(snapshot.infrastructure_errors) == 1
+    assert snapshot.infrastructure_errors[0]["case_id"] == 5
+
+
+def test_zip_loading_reads_planner_capture() -> None:
+    """_load_zip_bytes loads planner_capture.json from ZIP."""
+    data = make_zip_bytes(
+        {
+            "run_metadata.json": {"status": "completed"},
+            "planner_capture.json": {"value": {"mode": "comparison"}},
+        }
+    )
+    snapshot = _load_zip_bytes(data)
+    assert snapshot.planner_capture["value"]["mode"] == "comparison"
+
+
+def test_tui_detail_shows_infrastructure_errors() -> None:
+    """TUI detail view shows infrastructure error records for the selected case."""
+    tui = BenchDeckTUI(Path("/tmp/nonexistent_tui3"))
+    tui.snapshot = Snapshot(
+        plan={
+            "cases": [
+                {"id": 1, "title": "Test", "family": "happy_path", "purpose": "x"},
+            ]
+        },
+        infrastructure_errors=[
+            {
+                "case_id": 1,
+                "agent_label": "agent_a",
+                "case_title": "Test",
+                "stage": "agent",
+                "error_type": "ConnectionError",
+                "message": "Network failure",
+                "response_id": "resp-123",
+                "attempts": 3,
+            }
+        ],
+    )
+    lines = tui._detail(40)
+    text = "\n".join(lines)
+    assert "Infrastructure error details" in text
+    assert "ConnectionError" in text
+    assert "Network failure" in text
+    assert "resp-123" in text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Loader auto-discovery of run_id subdirectories
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_load_snapshot_discovers_run_id_subdirectory(tmp_path: Path) -> None:
+    root = tmp_path / "benchmark_out"
+    run_dir = root / "20240601T120000.000000Z"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_metadata.json").write_text(
+        json.dumps({"status": "completed", "cases_in_plan": 8})
+    )
+
+    snapshot = load_snapshot(root)
+    assert snapshot.metadata["status"] == "completed"
+    assert snapshot.metadata["cases_in_plan"] == 8
+
+
+def test_load_snapshot_picks_most_recent_run_id(tmp_path: Path) -> None:
+    root = tmp_path / "benchmark_out"
+    older = root / "20240601T110000.000000Z"
+    newer = root / "20240601T120000.000000Z"
+    older.mkdir(parents=True)
+    newer.mkdir(parents=True)
+    (older / "run_metadata.json").write_text(json.dumps({"status": "old"}))
+    (newer / "run_metadata.json").write_text(json.dumps({"status": "new"}))
+
+    snapshot = load_snapshot(root)
+    assert snapshot.metadata["status"] == "new"
+
+
+def test_load_snapshot_direct_subdir_still_works(tmp_path: Path) -> None:
+    run_dir = tmp_path / "direct_run"
+    run_dir.mkdir()
+    (run_dir / "run_metadata.json").write_text(json.dumps({"status": "running"}))
+
+    snapshot = load_snapshot(run_dir)
+    assert snapshot.metadata["status"] == "running"

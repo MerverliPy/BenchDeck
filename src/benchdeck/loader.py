@@ -17,6 +17,8 @@ class Snapshot:
     judgments: list[dict[str, Any]] = field(default_factory=list)
     policy_blocks: list[dict[str, Any]] = field(default_factory=list)
     results: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    infrastructure_errors: list[dict[str, Any]] = field(default_factory=list)
+    planner_capture: dict[str, Any] = field(default_factory=dict)
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -24,6 +26,14 @@ def _read_json(path: Path, default: Any) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return default
+
+
+def _sum_tally_int(tally: dict[str, Any], key: str) -> int:
+    total = 0
+    for agent_tally in tally.values():
+        if isinstance(agent_tally, dict):
+            total += int(agent_tally.get(key, 0) or 0)
+    return total
 
 
 def load_snapshot(run_path: Path) -> Snapshot:
@@ -38,6 +48,21 @@ def load_snapshot(run_path: Path) -> Snapshot:
                 return _load_zip_bytes(base64.b64decode(encoded, validate=False))
             except (OSError, ValueError):
                 return Snapshot()
+    if run_path.is_dir():
+        if (run_path / "run_metadata.json").exists():
+            return _load_dir_snapshot(run_path)
+        subdirs = sorted(
+            [d for d in run_path.iterdir() if d.is_dir() and (d / "run_metadata.json").exists()],
+            key=lambda d: d.name,
+            reverse=True,
+        )
+        if subdirs:
+            return _load_dir_snapshot(subdirs[0])
+        return _load_dir_snapshot(run_path)
+    return _load_dir_snapshot(run_path)
+
+
+def _load_dir_snapshot(run_path: Path) -> Snapshot:
     return Snapshot(
         metadata=_read_json(run_path / "run_metadata.json", {}),
         plan=_read_json(run_path / "benchmark_plan.json", {}),
@@ -45,6 +70,8 @@ def load_snapshot(run_path: Path) -> Snapshot:
         judgments=_read_json(run_path / "case_judgments.json", []),
         policy_blocks=_read_json(run_path / "policy_blocks.json", []),
         results=_read_json(run_path / "run_results.json", {}),
+        infrastructure_errors=_read_json(run_path / "infrastructure_errors.json", []),
+        planner_capture=_read_json(run_path / "planner_capture.json", {}),
     )
 
 
@@ -63,6 +90,8 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
         "case_judgments.json": [],
         "policy_blocks.json": [],
         "run_results.json": {},
+        "infrastructure_errors.json": [],
+        "planner_capture.json": {},
     }
     loaded: dict[str, Any] = {}
     try:
@@ -101,4 +130,6 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
         judgments=loaded["case_judgments.json"],
         policy_blocks=loaded["policy_blocks.json"],
         results=loaded["run_results.json"],
+        infrastructure_errors=loaded["infrastructure_errors.json"],
+        planner_capture=loaded["planner_capture.json"],
     )

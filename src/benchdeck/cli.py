@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--output-dir", type=Path, default=Path("benchmark_out"))
     run.add_argument("--model", default="gpt-4o-mini")
     run.add_argument("--judge-model", default="gpt-4o-mini")
+    run.add_argument("--overwrite", action="store_true", help="Overwrite an existing run directory")
 
     tui = sub.add_parser("tui", help="Open the live terminal dashboard")
     tui.add_argument("run_dir", type=Path)
@@ -77,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             judge_model=args.judge_model,
             plan_path=args.plan,
+            overwrite=args.overwrite,
         )
         status = runner.run()
         print(status.value)

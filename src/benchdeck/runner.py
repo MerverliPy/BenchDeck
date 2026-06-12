@@ -58,15 +58,15 @@ class BenchmarkRunner:
         planner_gateway: GatewayProtocol | None = None,
         agent_gateway: GatewayProtocol | None = None,
         judge_gateway: GatewayProtocol | None = None,
+        overwrite: bool = False,
     ) -> None:
         self.agent_a_path = agent_a_path
         self.agent_b_path = agent_b_path
-        self.output_dir = output_dir
+        self.output_root = output_dir
         self.plan_path = plan_path
         self._planner_gateway = planner_gateway
         self.agent_gateway = agent_gateway or OpenAIGateway(GatewayConfig(model=model))
         self.judge_gateway = judge_gateway or OpenAIGateway(GatewayConfig(model=judge_model))
-        self.store = ArtifactStore(output_dir)
         self._shutdown = False
         self.metadata = RunMetadata(
             config={
@@ -77,6 +77,14 @@ class BenchmarkRunner:
                 "output_dir": str(output_dir),
             }
         )
+        self.output_dir = output_dir / self.metadata.run_id
+        if _dir_has_artifacts(output_dir) and not overwrite:
+            raise RuntimeError(
+                f"Output directory {output_dir} already contains run artifacts. "
+                f"Use --overwrite to replace, or point to a parent directory."
+            )
+        self.store = ArtifactStore(self.output_dir)
+        self._shutdown = False
 
     @property
     def agent_labels(self) -> list[str]:
@@ -453,6 +461,10 @@ class BenchmarkRunner:
 
 
 # ── gateway result conversion ─────────────────────────────────────────────
+
+
+def _dir_has_artifacts(directory: Path) -> bool:
+    return directory.is_dir() and (directory / "run_metadata.json").exists()
 
 
 def _result_to_capture(result: GenerationResult[Any]) -> ResponseCapture:

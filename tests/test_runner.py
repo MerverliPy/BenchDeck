@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from conftest import (
     make_case,
+    make_comparison_plan,
     make_judgment,
     make_single_plan,
 )
@@ -310,20 +311,22 @@ def test_single_agent_run_completes_with_fake_gateways(tmp_path: Path, agent_a_p
         agent_a_path=agent_a_path,
         agent_b_path=None,
         output_dir=out,
-        model="fake-model",
-        judge_model="fake-judge",
+        model="fake",
+        judge_model="fake",
         planner_gateway=planner,
         agent_gateway=agent,
         judge_gateway=judge,
+        overwrite=True,
     )
 
     status = runner.run()
     assert status == RunStatus.COMPLETED
 
-    assert (out / "benchmark_plan.json").exists()
-    assert (out / "run_results.json").exists()
-    assert (out / "case_judgments.json").exists()
-    assert (out / "summary_tally.json").exists()
+    actual_out = runner.output_dir
+    assert (actual_out / "benchmark_plan.json").exists()
+    assert (actual_out / "run_results.json").exists()
+    assert (actual_out / "case_judgments.json").exists()
+    assert (actual_out / "summary_tally.json").exists()
 
 
 def test_output_directory_with_prior_run_silently_produces_mixed_run(
@@ -365,11 +368,17 @@ def test_output_directory_with_prior_run_silently_produces_mixed_run(
         planner_gateway=planner,
         agent_gateway=agent,
         judge_gateway=judge,
+        overwrite=True,
     )
     runner.run()
 
-    meta = json.loads((out / "run_metadata.json").read_text())
+    actual_out = runner.output_dir
+    meta = json.loads((actual_out / "run_metadata.json").read_text())
     assert meta["cases_in_plan"] == 8
+
+    assert (out / "run_metadata.json").read_text().startswith('{"status": "completed"'), (
+        "Prior run files must not be overwritten"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -617,8 +626,9 @@ def test_runner_records_policy_block(tmp_path: Path, agent_a_path: Path) -> None
 
     status = runner.run()
     assert status == RunStatus.INCONCLUSIVE
-    assert (out / "policy_blocks.json").exists()
-    blocks_data = json.loads((out / "policy_blocks.json").read_text())
+    actual_out = runner.output_dir
+    assert (actual_out / "policy_blocks.json").exists()
+    blocks_data = json.loads((actual_out / "policy_blocks.json").read_text())
     assert len(blocks_data) > 0
 
 
@@ -638,3 +648,184 @@ def test_prior_run_output_directory_not_detected(tmp_path: Path) -> None:
     store.write_json("run_metadata.json", {"status": "running", "planned_cases": 4})
     meta = store.read_json("run_metadata.json")
     assert meta["planned_cases"] == 4
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Integration — comparison mode with fake gateways
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_comparison_run_completes_with_fake_gateways(tmp_path: Path) -> None:
+    agent_a = tmp_path / "agent_a.md"
+    agent_a.write_text("# Agent A\n\nYou are a coding assistant.\n", encoding="utf-8")
+    agent_b = tmp_path / "agent_b.md"
+    agent_b.write_text("# Agent B\n\nYou are a code reviewer.\n", encoding="utf-8")
+
+    plan_cases = [
+        make_case(1, "happy_path"),
+        make_case(2, "happy_path"),
+        make_case(3, "regression_protection"),
+        make_case(4, "regression_protection"),
+        make_case(5, "stress_adversarial"),
+        make_case(6, "stress_adversarial"),
+        make_case(7, "ambiguity"),
+        make_case(8, "ambiguity"),
+    ]
+    plan = BenchmarkPlan(
+        mode="comparison",
+        profile=make_comparison_plan().profile,
+        cases=plan_cases,
+    )
+    plan_json = plan.model_dump(mode="json")
+
+    planner = FakeGateway([json_response(plan_json)])
+    agent = FakeGateway(
+        [text_response(f"Answer A for case {c.id}") for c in plan_cases]
+        + [text_response(f"Answer B for case {c.id}") for c in plan_cases]
+    )
+    judge = FakeGateway(
+        [json_response(_judgment_json(c.id, "Strong")) for c in plan_cases]
+        + [json_response(_judgment_json(c.id, "Excellent")) for c in plan_cases]
+    )
+
+    out = tmp_path / "comparison_out"
+    runner = BenchmarkRunner(
+        agent_a_path=agent_a,
+        agent_b_path=agent_b,
+        output_dir=out,
+        model="fake-model",
+        judge_model="fake-judge",
+        planner_gateway=planner,
+        agent_gateway=agent,
+        judge_gateway=judge,
+    )
+
+    status = runner.run()
+    assert status == RunStatus.COMPLETED
+
+    actual_out = runner.output_dir
+    assert (actual_out / "summary_tally.json").exists()
+    tally = json.loads((actual_out / "summary_tally.json").read_text())
+    assert "agent_a" in tally
+    assert "agent_b" in tally
+
+    assert (actual_out / "final_verdict.json").exists()
+    verdict = json.loads((actual_out / "final_verdict.json").read_text())
+    comparison = verdict.get("comparison")
+    assert comparison is not None, "final_verdict.json must have a comparison block"
+    assert comparison.get("valid") is True, "comparison verdict must be valid"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Output directory isolation (Phase 4 / AUD-P2-005)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_run_writes_to_run_id_subdirectory(tmp_path: Path, agent_a_path: Path) -> None:
+    plan_cases = [
+        make_case(1, "happy_path"),
+        make_case(2, "happy_path"),
+        make_case(3, "regression_protection"),
+        make_case(4, "regression_protection"),
+        make_case(5, "stress_adversarial"),
+        make_case(6, "stress_adversarial"),
+        make_case(7, "ambiguity"),
+        make_case(8, "ambiguity"),
+    ]
+    plan = make_single_plan(cases=plan_cases)
+    plan_json = plan.model_dump(mode="json")
+
+    planner = FakeGateway([json_response(plan_json)])
+    agent = FakeGateway([text_response(f"Answer {c.id}") for c in plan_cases])
+    judge = FakeGateway([json_response(_judgment_json(c.id, "Strong")) for c in plan_cases])
+
+    out = tmp_path / "root_out"
+    runner = BenchmarkRunner(
+        agent_a_path=agent_a_path,
+        agent_b_path=None,
+        output_dir=out,
+        model="fake",
+        judge_model="fake",
+        planner_gateway=planner,
+        agent_gateway=agent,
+        judge_gateway=judge,
+    )
+    runner.run()
+
+    assert runner.output_dir != out
+    assert runner.output_dir.parent == out
+    assert (runner.output_dir / "run_metadata.json").exists()
+    assert runner.metadata.run_id in str(runner.output_dir)
+
+
+def test_direct_dir_with_artifacts_rejected_without_overwrite(
+    tmp_path: Path, agent_a_path: Path
+) -> None:
+    direct_dir = tmp_path / "old_run"
+    direct_dir.mkdir()
+    (direct_dir / "run_metadata.json").write_text(json.dumps({"status": "completed"}))
+
+    with pytest.raises(RuntimeError, match="already contains run artifacts"):
+        BenchmarkRunner(
+            agent_a_path=agent_a_path,
+            agent_b_path=None,
+            output_dir=direct_dir,
+            model="fake",
+            judge_model="fake",
+            planner_gateway=FakeGateway([]),
+            agent_gateway=FakeGateway([]),
+            judge_gateway=FakeGateway([]),
+        )
+
+
+def test_overwrite_allows_existing_nonempty_dir(tmp_path: Path, agent_a_path: Path) -> None:
+    plan_cases = [
+        make_case(1, "happy_path"),
+        make_case(2, "happy_path"),
+        make_case(3, "regression_protection"),
+        make_case(4, "regression_protection"),
+        make_case(5, "stress_adversarial"),
+        make_case(6, "stress_adversarial"),
+        make_case(7, "ambiguity"),
+        make_case(8, "ambiguity"),
+    ]
+    plan = make_single_plan(cases=plan_cases)
+    plan_json = plan.model_dump(mode="json")
+
+    planner = FakeGateway([json_response(plan_json)])
+    agent = FakeGateway([text_response(f"Answer {c.id}") for c in plan_cases])
+    judge = FakeGateway([json_response(_judgment_json(c.id, "Strong")) for c in plan_cases])
+
+    out = tmp_path / "overwrite_out"
+    out.mkdir()
+
+    runner1 = BenchmarkRunner(
+        agent_a_path=agent_a_path,
+        agent_b_path=None,
+        output_dir=out,
+        model="fake",
+        judge_model="fake",
+        planner_gateway=planner,
+        agent_gateway=FakeGateway([text_response(f"First run {c.id}") for c in plan_cases]),
+        judge_gateway=FakeGateway(
+            [json_response(_judgment_json(c.id, "Excellent")) for c in plan_cases]
+        ),
+    )
+    runner1.run()
+    run1_dir = runner1.output_dir
+    assert run1_dir.exists()
+
+    runner2 = BenchmarkRunner(
+        agent_a_path=agent_a_path,
+        agent_b_path=None,
+        output_dir=out,
+        model="fake",
+        judge_model="fake",
+        planner_gateway=planner,
+        agent_gateway=agent,
+        judge_gateway=judge,
+        overwrite=True,
+    )
+    runner2.run()
+    run2_dir = runner2.output_dir
+    assert run2_dir.exists()

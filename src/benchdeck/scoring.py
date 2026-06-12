@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from typing import Any
@@ -15,6 +16,8 @@ from .models import (
     PolicyBlock,
     Rating,
 )
+
+logger = logging.getLogger("benchdeck.scoring")
 
 
 def build_tally(
@@ -93,4 +96,5 @@ def collect_terminal_keys(
 def results_to_list(obj: object) -> list[Any]:
     if isinstance(obj, list):
         return obj
+    logger.warning("results_to_list received non-list value: %r", type(obj).__name__)
     return []

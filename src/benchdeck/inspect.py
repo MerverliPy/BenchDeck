@@ -6,7 +6,7 @@ from typing import Any
 
 from jsonschema import ValidationError, validate
 
-from .loader import load_snapshot
+from .loader import _sum_tally_int, load_snapshot
 
 _SCHEMA_DIR = Path(__file__).parents[2] / "schemas"
 
@@ -61,8 +61,12 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         if not j.get("agent_label"):
             warnings.append(f"Judgment for case {j.get('case_id')} lacks agent_label attribution.")
 
-    scale = tally.get("score_scale")
-    if not scale:
+    scale_missing = False
+    for agent_tally in tally.values():
+        if isinstance(agent_tally, dict) and not agent_tally.get("score_scale"):
+            scale_missing = True
+            break
+    if not tally or scale_missing:
         warnings.append("Summary tally does not declare its score scale.")
     if metadata.get("status") == "completed" and (snapshot.policy_blocks or judged < planned):
         warnings.append("Run is marked completed despite blocked or missing required coverage.")
@@ -78,6 +82,14 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
             except ValidationError as exc:
                 warnings.append(f"Tally for {agent_label} fails schema validation: {exc.message}")
 
+    for ie in snapshot.infrastructure_errors:
+        meta = (
+            f"[{ie.get('agent_label', '?')}] case {ie.get('case_id', '?')}"
+            f" ({ie.get('case_title', '?')}) — {ie.get('stage', '?')}:"
+            f" {ie.get('error_type', '?')} / {ie.get('message', '')}"
+        )
+        warnings.append(f"Infrastructure error: {meta}")
+
     return {
         "run_dir": str(run_dir),
         "status": metadata.get("status", "unknown"),
@@ -86,11 +98,3 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "policy_blocks": len(snapshot.policy_blocks),
         "warnings": warnings,
     }
-
-
-def _sum_tally_int(tally: dict[str, Any], key: str) -> int:
-    total = 0
-    for agent_tally in tally.values():
-        if isinstance(agent_tally, dict):
-            total += int(agent_tally.get(key, 0) or 0)
-    return total
