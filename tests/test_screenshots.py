@@ -294,7 +294,12 @@ def test_add_compare_tab_with_dual_agents() -> None:
     lines = gds._add_compare_tab(tui, 80)
     joined = "\n".join(lines)
     assert "Agent Comparison" in joined
-    assert "repository-integrity-agent" in joined or "A:" in joined or " B:" in joined or "Delta" in joined
+    assert (
+        "repository-integrity-agent" in joined
+        or "A:" in joined
+        or " B:" in joined
+        or "Delta" in joined
+    )
     assert "Gate failures" in joined
 
 
@@ -515,8 +520,15 @@ def test_render_to_svg_creates_valid_svg(tmp_path: Path) -> None:
     spec = gds.SCREEN_SPECS[0]
 
     path = gds._render_to_svg(
-        lines, tmp_path, spec, "monospace", 12, 80,
-        gds.THEMES["dark"], "dark", "synthetic",
+        lines,
+        tmp_path,
+        spec,
+        "monospace",
+        12,
+        80,
+        gds.THEMES["dark"],
+        "dark",
+        "synthetic",
     )
     assert path.exists()
     content = path.read_text(encoding="utf-8")

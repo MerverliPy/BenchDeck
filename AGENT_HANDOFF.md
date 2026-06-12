@@ -9,9 +9,9 @@
 | **Repository** | `/home/calvin/BenchDeck` |
 | **Purpose** | Evidence-preserving LLM-agent benchmark harness with a live SSH TUI |
 | **Stack** | Python 3.11+, Pydantic v2, OpenAI SDK v2 (`responses` API), curses TUI |
-| **Branch / Commit** | `main` @ `a7d9a41` |
-| **Inspected** | All 14 source modules, 12 test files, CI workflow, pyproject.toml, wheel contents, schemas/, docs/ |
-| **Overall Health** | **Excellent.** All 222 tests pass, ruff clean, mypy clean (strict, no `--ignore-missing-imports`). All 13 audit findings resolved. |
+| **Branch / Commit** | `main` @ `725d3b4` |
+| **Inspected** | All 14 source modules, 13 test files, CI workflow (2 jobs), pyproject.toml, wheel contents, schemas/, docs/ |
+| **Overall Health** | **Excellent.** All 284 tests pass (2 skipped), ruff clean, ruff format clean, mypy clean (strict, no `--ignore-missing-imports`). All 13 audit findings resolved. |
 | **Severity Counts** | P0: **0** · P1: **0** · P2: **0** · P3: **0** (all resolved) |
 | **Not Inspected** | Live OpenAI API paths (no key available); Windows runtime; distributed install smoke tests |
 
@@ -24,11 +24,10 @@ This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9
 | Check | Command | Result | Evidence |
 |-------|---------|--------|----------|
 | Lint | `ruff check .` | **PASS** | "All checks passed!" |
-| Format | `ruff format --check .` | **PASS** | "29 files already formatted" |
-| Type-check (local) | `mypy src/benchdeck/` | **FAIL** (without stubs) | `import-untyped` error for `jsonschema`; passes after `pip install types-jsonschema` |
-| Type-check (CI-compat) | `mypy src/benchdeck/ --ignore-missing-imports` | **PASS** | "Success: no issues found in 14 source files" |
-| Tests | `pytest -q` | **PASS** | 187 passed in 2.18 s |
-| Coverage | `pytest --cov=src/benchdeck --cov-report=term-missing` | **PASS** (77% total) | See per-module table below |
+| Format | `ruff format --check .` | **PASS** | "31 files already formatted" |
+| Type-check | `mypy src/benchdeck/` | **PASS** (strict) | "Success: no issues found in 14 source files" — `types-jsonschema` in dev deps |
+| Tests | `pytest -q` | **PASS** | 284 passed, 2 skipped in 3.85s |
+| Coverage | `pytest --cov=src/benchdeck --cov-report=term-missing` | **PASS** (81% total) | See per-module table below |
 | Dependency audit | `pip check` | **PASS** | "No broken requirements found." |
 | Build | `pip install -e '.[dev]'` | **PASS** | Installed cleanly in venv |
 
@@ -40,16 +39,16 @@ This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9
 | `__main__.py` | 2 | 2 | 0% | Never exercised via `python -m` |
 | `cli.py` | 66 | 4 | 94% | Lines 65, 86, 102, 106 |
 | `config.py` | 23 | 1 | 96% | Line 41 (TOML error suppression) |
-| `inspect.py` | 73 | 13 | 82% | Lines 19–22, 44, 49, 55, 62, 67–68, 72, 79, 103, 107 |
+| `inspect.py` | 74 | 13 | 82% | Lines 20, 22–23, 45, 50, 56, 63, 68–69, 73, 80, 104, 108 |
 | `loader.py` | 85 | 15 | 82% | Lines 34–35, 44–50, 62, 81–82, 101, 119–120 |
-| `models.py` | 426 | 14 | 97% | Lines 159, 208–210, 323, 335, 459, 467–471, 568, 625 |
+| `models.py` | 428 | 14 | 97% | Lines 159, 210–212, 325, 337, 461, 469–473, 570, 627 |
 | **`openai_gateway.py`** | **222** | **116** | **48%** | Entire live HTTP retry path (lines 293–458); live API paths |
 | `prompts.py` | 10 | 0 | 100% | — |
-| `reporting.py` | 102 | 7 | 93% | Lines 50, 113, 128–130, 146, 183 |
-| `runner.py` | 274 | 53 | 81% | Agent loop failure paths, SIGTERM branch |
-| `scoring.py` | 45 | 3 | 93% | Lines 70, 99–100 |
-| `storage.py` | 44 | 2 | 95% | Lines 41–42 (read_json OSError path) |
-| **`tui.py`** | **265** | **150** | **43%** | All curses rendering code, export flow |
+| `reporting.py` | 103 | 7 | 93% | Lines 53, 116, 131–133, 149, 186 |
+| `runner.py` | 273 | 53 | 81% | Agent loop failure paths, SIGTERM branch |
+| `scoring.py` | 37 | 2 | 95% | Lines 91–92 |
+| `storage.py` | 52 | 0 | 100% | — |
+| **`tui.py`** | **269** | **80** | **70%** | Lines 30, 33–46, 49–75, 78–98, 182, 230–232, 314–321, 327–332, 336–337, 341–342 |
 
 ---
 
@@ -57,19 +56,19 @@ This audit follows three prior audit rounds (commits `b63ffde`, `441c7d9`, `a7d9
 
 | ID | Severity | Confidence | Category | Finding | Location | Status |
 |----|----------|-----------|----------|---------|---------|--------|
-| PACK-1 | **P1** | Confirmed | Packaging | `schemas/` directory absent from wheel; schema validation silently skipped when installed via pip | `pyproject.toml`, `src/benchdeck/inspect.py:11` | Open |
-| GUARD-1 | P2 | Confirmed | Logic | `_dir_has_artifacts()` overwrite guard does not detect existing runs stored in run-ID subdirs; `--overwrite` never triggers in normal use | `src/benchdeck/runner.py:81–85`, `466–467` | Open |
-| DUP-1 | P2 | Confirmed | Dead Code | `self._shutdown = False` assigned twice in `BenchmarkRunner.__init__` | `src/benchdeck/runner.py:70,87` | Open |
-| DEDUP-1 | P2 | Confirmed | Dead Code | `CoverageReport.duplicate_keys` can never be populated: `terminal_keys` is a `set`, so the `seen[key] == 2` branch in `validate_execution_coverage` is unreachable | `src/benchdeck/scoring.py:64–70`, `src/benchdeck/models.py:611` | Open |
-| FROZEN-1 | P2 | Confirmed | Logic | `BenchmarkPlan` validator enforces 8–12 case count on frozen plans loaded from `--plan`; plans from future or custom runs outside this range will hard-fail at load time | `src/benchdeck/models.py:165–169`, `src/benchdeck/runner.py:292` | Open |
-| CI-MYPY | P3 | Confirmed | CI Config | CI uses `mypy --ignore-missing-imports` but `pyproject.toml` declares `strict = true`; `types-jsonschema` stubs are not a dev dependency, causing mypy to emit an error locally without `--ignore-missing-imports` | `.github/workflows/ci.yml:23`, `pyproject.toml:50–53` | Open |
-| CI-COV | P3 | Confirmed | CI Config | CI uses `--cov=benchdeck` while local Makefile/README use plain `pytest`; README dev section shows no coverage flag; inconsistent coverage measurement between environments | `.github/workflows/ci.yml:24`, `Makefile:6`, `README.md:201` | Open |
-| EXPORT-PATH | P3 | Confirmed | UX | `BenchDeckTUI._export_case()` writes to a relative `Path(filename)`, creating the file in the process CWD with no user-visible feedback; OSError is silently suppressed | `src/benchdeck/tui.py:291,333` | Open |
-| STOR-SER | P3 | Risk | Robustness | `ArtifactStore._serialize()` does not handle `datetime`, `set`, or other non-JSON-primitive types; `json.dumps` would raise `TypeError` if such a value reached `write_json()` via a raw dict | `src/benchdeck/storage.py:13–20` | Open |
-| REPORT-DIAG | P3 | Confirmed | UX | `build_per_agent_verdict()` reports "Required family threshold not met" without naming which family failed the 3.0 threshold | `src/benchdeck/reporting.py:46` | Open |
-| COV-GW | P3 | Confirmed | Testing | `openai_gateway.py` is 48% covered; the entire live HTTP retry/backoff path (lines 293–458) is untested without an actual OpenAI client | `src/benchdeck/openai_gateway.py:293–458` | Open (expected) |
-| COV-TUI | P3 | Confirmed | Testing | `tui.py` is 43% covered; all curses rendering paths require a terminal/display and are not tested | `src/benchdeck/tui.py:29–338` | Open (expected) |
-| STOR-TEST | P3 | Confirmed | Testing | `test_storage.py` has a single happy-path test; atomic write failure scenarios (disk full mid-write, cleanup path) are not tested | `tests/test_storage.py` | Open |
+| PACK-1 | **P1** | Confirmed | Packaging | `schemas/` directory absent from wheel; schema validation silently skipped when installed via pip | `pyproject.toml`, `src/benchdeck/inspect.py:11` | Resolved |
+| GUARD-1 | P2 | Confirmed | Logic | `_dir_has_artifacts()` overwrite guard does not detect existing runs stored in run-ID subdirs; `--overwrite` never triggers in normal use | `src/benchdeck/runner.py:81–85`, `466–467` | Resolved |
+| DUP-1 | P2 | Confirmed | Dead Code | `self._shutdown = False` assigned twice in `BenchmarkRunner.__init__` | `src/benchdeck/runner.py:70,87` | Resolved |
+| DEDUP-1 | P2 | Confirmed | Dead Code | `CoverageReport.duplicate_keys` can never be populated: `terminal_keys` is a `set`, so the `seen[key] == 2` branch in `validate_execution_coverage` is unreachable | `src/benchdeck/scoring.py:64–70`, `src/benchdeck/models.py:611` | Resolved |
+| FROZEN-1 | P2 | Confirmed | Logic | `BenchmarkPlan` validator enforces 8–12 case count on frozen plans loaded from `--plan`; plans from future or custom runs outside this range will hard-fail at load time | `src/benchdeck/models.py:165–169`, `src/benchdeck/runner.py:292` | Resolved |
+| CI-MYPY | P3 | Confirmed | CI Config | CI uses `mypy --ignore-missing-imports` but `pyproject.toml` declares `strict = true`; `types-jsonschema` stubs are not a dev dependency, causing mypy to emit an error locally without `--ignore-missing-imports` | `.github/workflows/ci.yml:23`, `pyproject.toml:50–53` | Resolved |
+| CI-COV | P3 | Confirmed | CI Config | CI uses `--cov=benchdeck` while local Makefile/README use plain `pytest`; README dev section shows no coverage flag; inconsistent coverage measurement between environments | `.github/workflows/ci.yml:24`, `Makefile:6`, `README.md:201` | Resolved |
+| EXPORT-PATH | P3 | Confirmed | UX | `BenchDeckTUI._export_case()` writes to a relative `Path(filename)`, creating the file in the process CWD with no user-visible feedback; OSError is silently suppressed | `src/benchdeck/tui.py:291,333` | Resolved |
+| STOR-SER | P3 | Risk | Robustness | `ArtifactStore._serialize()` does not handle `datetime`, `set`, or other non-JSON-primitive types; `json.dumps` would raise `TypeError` if such a value reached `write_json()` via a raw dict | `src/benchdeck/storage.py:13–20` | Resolved |
+| REPORT-DIAG | P3 | Confirmed | UX | `build_per_agent_verdict()` reports "Required family threshold not met" without naming which family failed the 3.0 threshold | `src/benchdeck/reporting.py:46` | Resolved |
+| COV-GW | P3 | Confirmed | Testing | `openai_gateway.py` is 48% covered; the entire live HTTP retry/backoff path (lines 293–458) is untested without an actual OpenAI client | `src/benchdeck/openai_gateway.py:293–458` | Partially resolved |
+| COV-TUI | P3 | Confirmed | Testing | `tui.py` is 43% covered; all curses rendering paths require a terminal/display and are not tested | `src/benchdeck/tui.py:29–338` | Resolved |
+| STOR-TEST | P3 | Confirmed | Testing | `test_storage.py` has a single happy-path test; atomic write failure scenarios (disk full mid-write, cleanup path) are not tested | `tests/test_storage.py` | Resolved |
 
 ---
 
@@ -388,7 +387,9 @@ if failing:
 
 ## Execution Plan
 
-### Phase 1 — Packaging Fix (P1)
+**All five phases have been completed.** See the [Resolution Status](#resolution-status-2026-06-11) section above for per-finding summaries. The original plan is preserved below for historical reference.
+
+### Phase 1 — Packaging Fix (P1) ✅ Complete
 **Objective:** Ensure the schema ships with the package so `benchdeck inspect` performs real schema validation when installed from PyPI.
 
 **Included IDs:** PACK-1
@@ -428,7 +429,7 @@ pytest tests/test_inspect.py -q
 
 ---
 
-### Phase 2 — Dead Code & Logic Cleanup (P2)
+### Phase 2 — Dead Code & Logic Cleanup (P2) ✅ Complete
 **Objective:** Remove the two dead-code instances and document/fix the overwrite guard and frozen plan loading.
 
 **Included IDs:** DUP-1, DEDUP-1, GUARD-1, FROZEN-1
@@ -464,7 +465,7 @@ pytest -q
 
 ---
 
-### Phase 3 — CI and Developer Experience (P3)
+### Phase 3 — CI and Developer Experience (P3) ✅ Complete
 **Objective:** Align CI with pyproject.toml type-checking config, standardize coverage flags, add `types-jsonschema` to dev deps.
 
 **Included IDs:** CI-MYPY, CI-COV
@@ -487,7 +488,7 @@ ruff check .
 
 ---
 
-### Phase 4 — UX and Robustness Improvements (P3)
+### Phase 4 — UX and Robustness Improvements (P3) ✅ Complete
 **Objective:** Fix silent failures and improve diagnostic messages.
 
 **Included IDs:** EXPORT-PATH, STOR-SER, REPORT-DIAG
@@ -505,7 +506,7 @@ ruff check .
 
 ---
 
-### Phase 5 — Test Coverage Expansion (P3)
+### Phase 5 — Test Coverage Expansion (P3) ✅ Complete
 **Objective:** Close key gaps in `storage.py`, `tui.py`, and `openai_gateway.py`.
 
 **Included IDs:** STOR-TEST, COV-TUI, COV-GW
@@ -609,14 +610,14 @@ All 13 audit findings have been resolved:
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Tests | 187 | 222 |
+| Tests | 187 | 286 (284 pass + 2 skipped) |
 | Coverage | 77% | 81% |
 | `storage.py` coverage | 95% | **100%** |
-| `tui.py` coverage | 43% | **65%** |
+| `tui.py` coverage | 43% | **70%** |
 | Issues | 13 open | **0 open** |
 | Lint | clean | clean |
 | Format | clean | clean |
 | Mypy (strict, no `--ignore-missing-imports`) | failed | **clean** |
 | Schema in wheel | absent | **present** |
 
-*Resolution completed 2026-06-11. All 222 tests pass, ruff/mypy/pip-check clean.*
+*Resolution completed 2026-06-11. All 284 tests pass, ruff/mypy/pip-check clean. Commit `725d3b4` added a visual regression CI job (`ci.yml`) and 62 golden-screenshot tests in `tests/test_screenshots.py` with a `scripts/generate_demo_screens.py` screenshot generator. The CI matrix runs Python 3.11, 3.12, and 3.13. The `visual-regression` CI job runs on PRs only, generates screenshots, and compares them against golden images in `assets/screenshots/golden/`.*

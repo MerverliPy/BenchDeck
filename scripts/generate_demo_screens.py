@@ -107,22 +107,39 @@ THEMES: dict[str, dict[str, tuple[int, int, int]]] = {
 }
 
 
-def _resolve_theme(theme_name: str, theme_file: str | None = None) -> dict[str, tuple[int, int, int]]:
+def _resolve_theme(
+    theme_name: str, theme_file: str | None = None
+) -> dict[str, tuple[int, int, int]]:
     if theme_file:
         try:
             data = json.loads(Path(theme_file).read_text(encoding="utf-8"))
             return {k: tuple(v) for k, v in data.items()}
         except (OSError, json.JSONDecodeError, TypeError):
-            print(f"Warning: could not load theme file '{theme_file}', falling back.", file=sys.stderr)
+            print(
+                f"Warning: could not load theme file '{theme_file}', falling back.", file=sys.stderr
+            )
     return THEMES.get(theme_name, THEMES["dark"])
 
 
 # ── font discovery ──────────────────────────────────────────────────────────
 
 _MONO_PATTERNS = [
-    "Mono", "mono", "Mono", "Consol", "consol", "Courier", "courier",
-    "monaco", "Monaco", "Hack", "SourceCode", "FiraCode", "Fira Mono",
-    "Ubuntu Mono", "NotoMono", "DejaVuSansMono",
+    "Mono",
+    "mono",
+    "Mono",
+    "Consol",
+    "consol",
+    "Courier",
+    "courier",
+    "monaco",
+    "Monaco",
+    "Hack",
+    "SourceCode",
+    "FiraCode",
+    "Fira Mono",
+    "Ubuntu Mono",
+    "NotoMono",
+    "DejaVuSansMono",
 ]
 
 
@@ -662,7 +679,9 @@ _RATING_COLOUR_MAP = {
 }
 
 
-def _colourise_line(line: str, theme: dict[str, tuple[int, int, int]]) -> list[tuple[str, tuple[int, int, int]]]:
+def _colourise_line(
+    line: str, theme: dict[str, tuple[int, int, int]]
+) -> list[tuple[str, tuple[int, int, int]]]:
     """Regex-based colourisation for progress bars, ratings, status keywords."""
     FG = theme["FG"]
     FG_DIM = theme["FG_DIM"]
@@ -681,7 +700,7 @@ def _colourise_line(line: str, theme: dict[str, tuple[int, int, int]]) -> list[t
     }
 
     # Progress bar: [####---]
-    m = re.match(r'(Progress\s+\[)(#+)(-*)(\].*)', line)
+    m = re.match(r"(Progress\s+\[)(#+)(-*)(\].*)", line)
     if m:
         parts: list[tuple[str, tuple[int, int, int]]] = []
         parts.append((m.group(1), FG))
@@ -696,7 +715,7 @@ def _colourise_line(line: str, theme: dict[str, tuple[int, int, int]]) -> list[t
         return [
             (line[:idx], FG),
             ("BLOCKED", RED),
-            (line[idx + 7:], FG),
+            (line[idx + 7 :], FG),
         ]
 
     # PENDING keyword
@@ -705,7 +724,7 @@ def _colourise_line(line: str, theme: dict[str, tuple[int, int, int]]) -> list[t
         return [
             (line[:idx], FG),
             ("PENDING", FG_DIM),
-            (line[idx + 7:], FG),
+            (line[idx + 7 :], FG),
         ]
 
     # Rating keywords
@@ -715,7 +734,7 @@ def _colourise_line(line: str, theme: dict[str, tuple[int, int, int]]) -> list[t
             return [
                 (line[:idx], FG),
                 (rating, colour),
-                (line[idx + len(rating):], FG),
+                (line[idx + len(rating) :], FG),
             ]
 
     return [(line, FG)]
@@ -783,7 +802,12 @@ def _render_footer(
 
 
 def _render_label(
-    draw: Any, font: Any, img_w: int, label_y: int, label: str, theme: dict[str, tuple[int, int, int]]
+    draw: Any,
+    font: Any,
+    img_w: int,
+    label_y: int,
+    label: str,
+    theme: dict[str, tuple[int, int, int]],
 ) -> None:
     LABEL = theme["LABEL"]
     draw.text((16, label_y), label, fill=LABEL, font=font)
@@ -1002,9 +1026,7 @@ def _render_to_svg(
         cx = px_x
         for text, colour in parts:
             esc_text = _escape_xml(text)
-            svg_lines.append(
-                f'<text x="{cx}" y="{y}" fill="{_rgb(colour)}">{esc_text}</text>'
-            )
+            svg_lines.append(f'<text x="{cx}" y="{y}" fill="{_rgb(colour)}">{esc_text}</text>')
             cx += len(text) * char_w
         y += char_h
 
@@ -1200,11 +1222,43 @@ def _interactive_mode(
             s = specs[tui.tab]
             fmt = args.format
             if fmt == "svg":
-                _render_to_svg(lines, out_dir, s, "monospace", args.font_size, width, theme, theme_name, snapshot_source)
+                _render_to_svg(
+                    lines,
+                    out_dir,
+                    s,
+                    "monospace",
+                    args.font_size,
+                    width,
+                    theme,
+                    theme_name,
+                    snapshot_source,
+                )
             elif fmt == "webp":
-                _render_to_webp(lines, out_dir, s, font, bold_font, args.font_size, width, theme, theme_name, snapshot_source)
+                _render_to_webp(
+                    lines,
+                    out_dir,
+                    s,
+                    font,
+                    bold_font,
+                    args.font_size,
+                    width,
+                    theme,
+                    theme_name,
+                    snapshot_source,
+                )
             else:
-                _render_to_png(lines, out_dir, s, font, bold_font, args.font_size, width, theme, theme_name, snapshot_source)
+                _render_to_png(
+                    lines,
+                    out_dir,
+                    s,
+                    font,
+                    bold_font,
+                    args.font_size,
+                    width,
+                    theme,
+                    theme_name,
+                    snapshot_source,
+                )
             print(f"  -> saved {s['name']}.{fmt}")
         elif cmd == "h":
             print("  1-5: tab  j/k: select  Enter: screenshot  q: quit  h: help")
@@ -1268,7 +1322,15 @@ def generate_screenshots(
 
             if fmt == "svg":
                 path = _render_to_svg(
-                    lines, out_dir, spec, "monospace", font_size, w, theme, theme_name, snapshot_source
+                    lines,
+                    out_dir,
+                    spec,
+                    "monospace",
+                    font_size,
+                    w,
+                    theme,
+                    theme_name,
+                    snapshot_source,
                 )
                 if w_suffix:
                     new_path = out_dir / f"{name}{w_suffix}.svg"
@@ -1276,7 +1338,17 @@ def generate_screenshots(
                     path = new_path
             elif fmt == "webp":
                 path = _render_to_webp(
-                    lines, out_dir, spec, font, bold_font, font_size, w, theme, theme_name, snapshot_source, wm_text
+                    lines,
+                    out_dir,
+                    spec,
+                    font,
+                    bold_font,
+                    font_size,
+                    w,
+                    theme,
+                    theme_name,
+                    snapshot_source,
+                    wm_text,
                 )
                 if w_suffix:
                     new_path = out_dir / f"{name}{w_suffix}.webp"
@@ -1284,21 +1356,49 @@ def generate_screenshots(
                     path = new_path
             elif fmt == "all":
                 path_png = _render_to_png(
-                    lines, out_dir, spec, font, bold_font, font_size, w, theme, theme_name, snapshot_source, wm_text
+                    lines,
+                    out_dir,
+                    spec,
+                    font,
+                    bold_font,
+                    font_size,
+                    w,
+                    theme,
+                    theme_name,
+                    snapshot_source,
+                    wm_text,
                 )
                 if w_suffix:
                     new_path = out_dir / f"{name}{w_suffix}.png"
                     path_png.rename(new_path)
                     path_png = new_path
                 path_webp = _render_to_webp(
-                    lines, out_dir, spec, font, bold_font, font_size, w, theme, theme_name, snapshot_source, wm_text
+                    lines,
+                    out_dir,
+                    spec,
+                    font,
+                    bold_font,
+                    font_size,
+                    w,
+                    theme,
+                    theme_name,
+                    snapshot_source,
+                    wm_text,
                 )
                 if w_suffix:
                     new_path = out_dir / f"{name}{w_suffix}.webp"
                     path_webp.rename(new_path)
                     path_webp = new_path
                 path_svg = _render_to_svg(
-                    lines, out_dir, spec, "monospace", font_size, w, theme, theme_name, snapshot_source
+                    lines,
+                    out_dir,
+                    spec,
+                    "monospace",
+                    font_size,
+                    w,
+                    theme,
+                    theme_name,
+                    snapshot_source,
                 )
                 if w_suffix:
                     new_path = out_dir / f"{name}{w_suffix}.svg"
@@ -1308,7 +1408,17 @@ def generate_screenshots(
                 path = path_svg
             else:
                 path = _render_to_png(
-                    lines, out_dir, spec, font, bold_font, font_size, w, theme, theme_name, snapshot_source, wm_text
+                    lines,
+                    out_dir,
+                    spec,
+                    font,
+                    bold_font,
+                    font_size,
+                    w,
+                    theme,
+                    theme_name,
+                    snapshot_source,
+                    wm_text,
                 )
                 if w_suffix:
                     new_path = out_dir / f"{name}{w_suffix}.png"
