@@ -26,3 +26,85 @@ jobs:
       - run: ruff format --check .
       - run: mypy src/benchdeck/
       - run: pytest --cov=src/benchdeck --cov-report=term-missing
+
+  visual-regression:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Install system fonts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core fonts-liberation
+      - name: Generate screenshots
+        run: python scripts/generate_demo_screens.py -o assets/screenshots/ci/ -w 80 --font-size 15
+      - name: Compare against golden images
+        id: visual-diff
+        run: |
+          set +e
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          from PIL import Image
+
+          golden_dir = Path("assets/screenshots/golden")
+          ci_dir = Path("assets/screenshots/ci")
+          failed = []
+
+          for golden_path in sorted(golden_dir.glob("*.png")):
+              ci_path = ci_dir / golden_path.name
+              if not ci_path.exists():
+                  print(f"MISSING: {golden_path.name} not generated")
+                  failed.append(golden_path.name)
+                  continue
+              golden = Image.open(golden_path)
+              ci_img = Image.open(ci_path)
+              if golden.size != ci_img.size:
+                  print(f"SIZE MISMATCH: {golden_path.name} golden={golden.size} ci={ci_img.size}")
+                  failed.append(golden_path.name)
+                  continue
+              diff_pixels = 0
+              total_pixels = golden.size[0] * golden.size[1]
+              g_data = golden.getdata()
+              c_data = ci_img.getdata()
+              for gp, cp in zip(g_data, c_data):
+                  if gp != cp:
+                      diff_pixels += 1
+              ratio = diff_pixels / total_pixels if total_pixels else 0
+              status = "PASS" if ratio < 0.001 else "FAIL"
+              print(f"  {golden_path.name}: {diff_pixels}/{total_pixels} pixels differ ({ratio:.4%}) {status}")
+              if status == "FAIL":
+                  failed.append(golden_path.name)
+              golden.close()
+              ci_img.close()
+
+          if failed:
+              print(f"\nVISUAL REGRESSION DETECTED: {len(failed)} image(s) changed")
+              for f in failed:
+                  print(f"  - {f}")
+              sys.exit(1)
+          else:
+              print("\nAll screenshots match golden images.")
+          PY
+      - name: Upload CI screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-ci
+          path: assets/screenshots/ci/
+      - name: Upload golden images (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-golden
+          path: assets/screenshots/golden/
