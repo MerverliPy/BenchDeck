@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from .models import BenchmarkCase
 
@@ -157,3 +158,147 @@ def judge_input(case: BenchmarkCase, candidate: str) -> str:
         },
         ensure_ascii=False,
     )
+
+
+JUDGE_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "case_verdict": {"type": "string", "description": "One-sentence summary of judgment"},
+        "gate_check": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["Pass", "Fail"]},
+                "reason": {"type": "string"},
+            },
+            "required": ["status", "reason"],
+            "additionalProperties": False,
+        },
+        "rubric_dimensions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "dimension": {
+                        "type": "string",
+                        "enum": [
+                            "mission_fidelity",
+                            "task_success",
+                            "priority_adherence",
+                            "ambiguity_handling",
+                            "process_discipline",
+                            "tool_discipline",
+                            "robustness",
+                            "regression_safety",
+                        ],
+                    },
+                    "rating": {
+                        "type": "string",
+                        "enum": ["Excellent", "Strong", "Acceptable", "Weak", "Fail"],
+                    },
+                    "evidence": {"type": "string"},
+                    "strengths": {"type": "array", "items": {"type": "string"}},
+                    "weaknesses": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["dimension", "rating", "evidence", "strengths", "weaknesses"],
+                "additionalProperties": False,
+            },
+            "minItems": 8,
+            "maxItems": 8,
+        },
+        "overall_rating": {
+            "type": "string",
+            "enum": ["Excellent", "Strong", "Acceptable", "Weak", "Fail"],
+        },
+        "why": {"type": "string"},
+        "regression_notes": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "case_verdict",
+        "gate_check",
+        "rubric_dimensions",
+        "overall_rating",
+        "why",
+        "regression_notes",
+    ],
+    "additionalProperties": False,
+}
+
+PLANNER_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "mode": {"type": "string", "enum": ["single", "comparison"]},
+        "profile": {
+            "type": "object",
+            "properties": {
+                "agent_name_a": {"type": "string"},
+                "agent_name_b": {"type": ["string", "null"]},
+                "inferred_mission": {"type": "string"},
+                "top_priorities": {"type": "array", "items": {"type": "string"}},
+                "boundaries": {"type": "array", "items": {"type": "string"}},
+                "tool_posture": {"type": "string"},
+                "mission_critical_capability": {"type": "string"},
+                "rare_defining_capability": {"type": "string"},
+                "likely_weak_spots": {"type": "array", "items": {"type": "string"}},
+                "likely_regression_risks": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": [
+                "agent_name_a",
+                "inferred_mission",
+                "top_priorities",
+                "boundaries",
+                "tool_posture",
+                "mission_critical_capability",
+                "rare_defining_capability",
+                "likely_weak_spots",
+                "likely_regression_risks",
+            ],
+            "additionalProperties": False,
+        },
+        "validation_standard": {"type": "array", "items": {"type": "string"}},
+        "cases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "minimum": 1},
+                    "title": {"type": "string"},
+                    "family": {
+                        "type": "string",
+                        "enum": [
+                            "happy_path",
+                            "regression_protection",
+                            "stress_adversarial",
+                            "ambiguity",
+                        ],
+                    },
+                    "purpose": {"type": "string"},
+                    "clarification_expectation": {
+                        "type": "string",
+                        "enum": ["required", "optional", "undesirable"],
+                    },
+                    "tool_expectation": {"type": "string"},
+                    "test_prompt": {"type": "string"},
+                    "clarification_answer_key": {"type": ["string", "null"]},
+                    "strong_behavior": {"type": "array", "items": {"type": "string"}},
+                    "weak_behavior": {"type": "array", "items": {"type": "string"}},
+                    "hard_fail_conditions": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": [
+                    "id",
+                    "title",
+                    "family",
+                    "purpose",
+                    "clarification_expectation",
+                    "tool_expectation",
+                    "test_prompt",
+                    "strong_behavior",
+                    "weak_behavior",
+                    "hard_fail_conditions",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["mode", "profile", "validation_standard", "cases"],
+    "additionalProperties": False,
+}

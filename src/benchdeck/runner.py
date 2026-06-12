@@ -32,7 +32,14 @@ from .models import (
     RunStatus,
 )
 from .openai_gateway import GatewayConfig, GatewayProtocol, OpenAIGateway
-from .prompts import JUDGE_INSTRUCTIONS, PLANNER_INSTRUCTIONS, judge_input, planner_input
+from .prompts import (
+    JUDGE_INSTRUCTIONS,
+    JUDGE_OUTPUT_SCHEMA,
+    PLANNER_INSTRUCTIONS,
+    PLANNER_OUTPUT_SCHEMA,
+    judge_input,
+    planner_input,
+)
 from .reporting import (
     build_per_agent_verdict,
     build_run_verdict,
@@ -90,6 +97,7 @@ class BenchmarkRunner:
                 timeout_s=_gw_timeout,
                 max_retries=_gw_retries,
                 use_structured_output=True,
+                json_schema=JUDGE_OUTPUT_SCHEMA,
             )
         )
         self._shutdown = False
@@ -443,6 +451,7 @@ class BenchmarkRunner:
                     timeout_s=self._gw_timeout,
                     max_retries=self._gw_retries,
                     use_structured_output=True,
+                    json_schema=PLANNER_OUTPUT_SCHEMA,
                 )
             )
         gen_result = planner.generate_json(

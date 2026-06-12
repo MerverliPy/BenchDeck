@@ -43,6 +43,7 @@ class GatewayConfig:
     temperature: float | None = None
     extra_headers: dict[str, str] = field(default_factory=dict)
     use_structured_output: bool = False
+    json_schema: dict[str, Any] | None = None
 
 
 @runtime_checkable
@@ -245,7 +246,17 @@ class OpenAIGateway:
         if self.config.temperature is not None:
             kwargs["temperature"] = self.config.temperature
         if self.config.use_structured_output:
-            kwargs["text"] = {"format": {"type": "json_object"}}
+            if self.config.json_schema is not None:
+                kwargs["text"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "response",
+                        "schema": self.config.json_schema,
+                        "strict": True,
+                    }
+                }
+            else:
+                kwargs["text"] = {"format": {"type": "json_object"}}
         return kwargs
 
     def _call_text(self, *, instructions: str, input_text: str) -> GenerationResult[str]:
