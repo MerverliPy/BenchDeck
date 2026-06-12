@@ -125,6 +125,10 @@ def build_parser() -> argparse.ArgumentParser:
     tui = sub.add_parser("tui", help="Open the live terminal dashboard")
     tui.add_argument("run_dir", type=Path)
     tui.add_argument("--refresh", type=float, default=1.0)
+    tui.add_argument("--agent-a", type=Path, default=None, help="Agent file to launch runs with")
+    tui.add_argument("--agent-b", type=Path, default=None, help="Second agent for comparison mode")
+    tui.add_argument("--model", default=None, help="Model for launched runs")
+    tui.add_argument("--judge-model", default=None, help="Judge model for launched runs")
 
     inspect_cmd = sub.add_parser("inspect", help="Audit an existing output directory")
     inspect_cmd.add_argument("run_dir", type=Path)
@@ -197,7 +201,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return 2
     if args.command == "tui":
-        BenchDeckTUI(args.run_dir, args.refresh).run()
+        BenchDeckTUI(
+            args.run_dir,
+            args.refresh,
+            agent_a_path=args.agent_a,
+            agent_b_path=args.agent_b,
+            model=args.model,
+            judge_model=args.judge_model,
+        ).run()
         return 0
     if args.command == "inspect":
         result = inspect_run(args.run_dir)

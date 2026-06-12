@@ -18,7 +18,15 @@ class BenchDeckTUI:
 
     TABS = ("Overview", "Cases", "Detail", "Help")
 
-    def __init__(self, run_dir: Path, refresh_seconds: float = 1.0) -> None:
+    def __init__(
+        self,
+        run_dir: Path,
+        refresh_seconds: float = 1.0,
+        agent_a_path: Path | None = None,
+        agent_b_path: Path | None = None,
+        model: str | None = None,
+        judge_model: str | None = None,
+    ) -> None:
         self.run_dir = run_dir
         self.refresh_seconds = refresh_seconds
         self.tab = 0
@@ -29,6 +37,12 @@ class BenchDeckTUI:
         self._status_msg = ""
         self._proc: _sp.Popen[bytes] | None = None
         self._proc_run_dir: Path | None = None
+        self._agent_a_path = agent_a_path
+        self._agent_b_path = agent_b_path
+        self._model = model
+        self._judge_model = judge_model
+        self._cancel_requested_at: float | None = None
+        self._has_color = False
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -37,6 +51,7 @@ class BenchDeckTUI:
         curses.curs_set(0)
         stdscr.nodelay(True)
         stdscr.keypad(True)
+        self._has_color = self._init_colors()
         while True:
             now = time.monotonic()
             if now - self.last_load >= self.refresh_seconds:
@@ -44,6 +59,8 @@ class BenchDeckTUI:
                 self.snapshot = load_snapshot(active_dir)
                 self.last_load = now
             self._poll_subprocess()
+            if self._cancel_requested_at and time.monotonic() - self._cancel_requested_at > 3.0:
+                self._cancel_requested_at = None
             self._draw(stdscr)
             key = stdscr.getch()
             if key in (ord("q"), 27):
@@ -54,6 +71,8 @@ class BenchDeckTUI:
             time.sleep(0.05)
 
     def _handle_key(self, key: int) -> None:
+        if key != ord("x") and self._cancel_requested_at is not None:
+            self._cancel_requested_at = None
         if key in (ord("1"), ord("2"), ord("3"), ord("4")):
             self.tab = key - ord("1")
             self.scroll = 0
@@ -84,7 +103,7 @@ class BenchDeckTUI:
         elif key == ord("n"):
             self._launch_run()
         elif key == ord("x"):
-            self._cancel_run()
+            self._handle_cancel_key()
 
     def _draw(self, stdscr: Any) -> None:
         stdscr.erase()
@@ -96,20 +115,43 @@ class BenchDeckTUI:
         title = " BENCHDECK "
         proc_info = f" PID:{self._proc.pid}" if self._proc else ""
         status = str(self.snapshot.metadata.get("status", "no run"))
-        self._safe_add(stdscr, 0, 0, title + f"[{status}]{proc_info}", width, curses.A_REVERSE)
+        title_attr = curses.A_REVERSE
+        tab_attr: int = curses.A_BOLD
+        footer_attr: int = curses.A_REVERSE
+        content_default_attr: int = 0
+        if self._has_color:
+            title_attr = curses.color_pair(6) | curses.A_BOLD
+            tab_attr = curses.color_pair(5) | curses.A_BOLD
+            footer_attr = curses.color_pair(6) | curses.A_BOLD
+        self._safe_add(stdscr, 0, 0, title + f"[{status}]{proc_info}", width, title_attr)
+        tab_names = ("Ov", "Ca", "De", "He") if width < 40 else self.TABS
         tab_line = " ".join(
-            f"{i + 1}:{name}" if i != self.tab else f"[{i + 1}:{name}]"
-            for i, name in enumerate(self.TABS)
+            f"{i + 1}:{tab_names[i]}" if i != self.tab else f"[{i + 1}:{tab_names[i]}]"
+            for i in range(len(self.TABS))
         )
-        self._safe_add(stdscr, 1, 0, tab_line, width, curses.A_BOLD)
+        self._safe_add(stdscr, 1, 0, tab_line, width, tab_attr)
         lines = self._render(width)
-        viewport = lines[self.scroll : self.scroll + height - 4]
+        plan_data = self.snapshot.plan
+        if plan_data and not plan_data.get("cases") and not self._status_msg:
+            self._status_msg = "WARNING: plan loaded but contains no cases"
+        view_height = height - 4
+        self.scroll = self._clamp_scroll(lines, view_height, self.scroll, self.tab, self.selected)
+        viewport = lines[self.scroll : self.scroll + view_height]
         for row, line in enumerate(viewport, start=2):
-            self._safe_add(stdscr, row, 0, line, width)
+            attr = content_default_attr
+            if self._has_color:
+                attr = self._line_attr(line)
+            self._safe_add(stdscr, row, 0, line, width, attr)
+        if view_height > 0:
+            max_scroll = max(0, len(lines) - view_height)
+            if self.scroll > 0:
+                self._safe_add(stdscr, 2, width - 2, " ↑", width)
+            if self.scroll < max_scroll:
+                self._safe_add(stdscr, 2 + view_height - 1, width - 2, " ↓", width)
         status = self._status_msg or (
             "h/l tabs  j/k move  Enter detail  e export  n run  x cancel  r reload  q quit"
         )
-        self._safe_add(stdscr, height - 1, 0, status, width, curses.A_REVERSE)
+        self._safe_add(stdscr, height - 1, 0, status, width, footer_attr)
         stdscr.refresh()
 
     def _render(self, width: int) -> list[str]:
@@ -288,6 +330,19 @@ class BenchDeckTUI:
                     lines.append(f"  Response ID: {ie['response_id']}")
                 if ie.get("attempts"):
                     lines.append(f"  Attempts: {ie['attempts']}")
+        orphan_errors = [
+            ie for ie in self.snapshot.infrastructure_errors if ie.get("case_id") is None
+        ]
+        if orphan_errors:
+            lines.append("")
+            lines += ["Pre-execution infrastructure errors:"]
+            for ie in orphan_errors:
+                lines += [
+                    f"  Stage: {ie.get('stage', '?')}",
+                    f"  Type: {ie.get('error_type', '?')}",
+                    f"  Message: {ie.get('message', '')}",
+                    f"  Agent: {ie.get('agent_label', '?')}",
+                ]
         return lines
 
     def _help(self, width: int) -> list[str]:
@@ -396,16 +451,30 @@ class BenchDeckTUI:
             base_dir = base_dir.parent
         ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
         run_dir = base_dir / ts
-        cmd = [
+        cfg = self.snapshot.metadata.get("config") or {}
+        agent_a = self._agent_a_path or Path(str(cfg.get("agent_a", "")))
+        agent_b = self._agent_b_path or (Path(str(cfg["agent_b"])) if cfg.get("agent_b") else None)
+        model = self._model or cfg.get("model") or "gpt-4o-mini"
+        judge_model = self._judge_model or cfg.get("judge_model") or model
+        if not agent_a.exists():
+            self._status_msg = f"Agent file not found: {agent_a}"
+            return
+        cmd: list[str] = [
             "python",
             "-m",
             "benchdeck",
             "run",
             "--agent-a",
-            str(Path("examples/repository-integrity-agent.md")),
+            str(agent_a),
             "--output-dir",
             str(run_dir.parent),
+            "--model",
+            model,
+            "--judge-model",
+            judge_model,
         ]
+        if agent_b and agent_b.exists():
+            cmd += ["--agent-b", str(agent_b)]
         try:
             self._proc = _sp.Popen(
                 cmd,
@@ -416,6 +485,18 @@ class BenchDeckTUI:
             self._status_msg = f"Launched PID {self._proc.pid} → {run_dir.name}"
         except OSError as exc:
             self._status_msg = f"Launch failed: {exc}"
+
+    def _handle_cancel_key(self) -> None:
+        if self._proc is None:
+            self._status_msg = "No subprocess to cancel"
+            return
+        now = time.monotonic()
+        if self._cancel_requested_at is not None and now - self._cancel_requested_at < 3.0:
+            self._cancel_requested_at = None
+            self._cancel_run()
+        else:
+            self._cancel_requested_at = now
+            self._status_msg = "Press x again to confirm cancel"
 
     def _cancel_run(self) -> None:
         if self._proc is None:
@@ -430,6 +511,84 @@ class BenchDeckTUI:
         self._status_msg = f"Cancelled PID {pid}"
         self._proc = None
         self._proc_run_dir = None
+
+    @staticmethod
+    def _clamp_scroll(
+        lines: list[str], view_height: int, scroll: int, tab: int, selected: int
+    ) -> int:
+        max_scroll = max(0, len(lines) - view_height)
+        scroll = max(0, min(scroll, max_scroll))
+        if tab == 1 and view_height > 0:
+            if selected >= scroll + view_height - 1:
+                scroll = max(0, selected - view_height + 2)
+            elif selected < scroll:
+                scroll = selected
+            scroll = max(0, min(scroll, max_scroll))
+        return scroll
+
+    # ── colour support ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _init_colors() -> bool:
+        if not curses.has_colors():
+            return False
+        try:
+            curses.start_color()
+        except curses.error:
+            return False
+        # Standard 8-color palette for maximum terminal compatibility.
+        # Pair 0 is always white-on-black and reserved.
+        curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
+        curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+        curses.init_pair(4, curses.COLOR_BLUE, curses.COLOR_BLACK)
+        curses.init_pair(5, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        return True
+
+    @staticmethod
+    def _line_attr(line: str) -> int:
+        """Return the curses colour-pair attribute for a content line.
+
+        Pattern-matches keywords that appear in TUI content lines.
+        Returns 0 (default) for uncoloured text.
+        """
+        # Ratings (whole-word detection via surrounding spaces / line boundaries)
+        for rating, pair in [
+            ("Excellent", 2),
+            ("Strong", 4),
+            ("Acceptable", 3),
+            ("Weak", 3),
+            ("Fail", 1),
+        ]:
+            if rating in line:
+                # Avoid partial-word matches inside longer text
+                idx = line.find(rating)
+                if idx >= 0:
+                    boundary = (" ", "[", ":", "]", ",", "(")
+                    before_ok = idx == 0 or line[idx - 1] in boundary
+                    after_end = idx + len(rating)
+                    after_ok = after_end == len(line) or line[after_end] in boundary
+                    if before_ok and after_ok:
+                        return curses.color_pair(pair)
+        # BLOCKED state
+        if "BLOCKED" in line:
+            return curses.color_pair(1)  # red
+        # Progress bar hash fill
+        stripped = line.lstrip()
+        if stripped.startswith("Progress [") and "#" in stripped:
+            return curses.color_pair(2)  # green
+        # WARNING lines
+        if "WARNING" in line:
+            return curses.color_pair(3)  # yellow
+        # Gate Pass / Fail
+        if "Pass" in line and "Gate" in line:
+            return curses.color_pair(2)  # green
+        if "Fail" in line and "Gate" in line:
+            return curses.color_pair(1)  # red
+        return 0
+
+    # ── rendering helpers ───────────────────────────────────────────────────
 
     @staticmethod
     def _safe_add(stdscr: Any, row: int, col: int, text: str, width: int, attr: int = 0) -> None:

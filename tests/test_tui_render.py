@@ -6,7 +6,10 @@ No terminal required.
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from benchdeck.loader import Snapshot
 from benchdeck.tui import BenchDeckTUI
@@ -17,6 +20,15 @@ def _make_tui(**kwargs: object) -> BenchDeckTUI:
     for key, value in kwargs.items():
         setattr(tui, key, value)
     return tui
+
+
+@contextmanager
+def _mock_popen() -> Generator[MagicMock, None, None]:
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_proc.poll.return_value = None
+    with patch("benchdeck.tui._sp.Popen", return_value=mock_proc) as mock_popen:
+        yield mock_popen
 
 
 def _snapshot_with_data(
@@ -278,3 +290,140 @@ def test_export_case_no_cases_does_nothing() -> None:
     tui.snapshot = Snapshot(plan={})
     tui._export_case()
     assert tui._status_msg == ""
+
+
+# ── scroll clamping ─────────────────────────────────────────────────────────
+
+
+def test_clamp_scroll_bounds_check() -> None:
+    lines = ["line 1", "line 2", "line 3"]
+    assert BenchDeckTUI._clamp_scroll(lines, 2, 999, 0, 0) == 1
+    assert BenchDeckTUI._clamp_scroll(lines, 3, 5, 0, 0) == 0
+    assert BenchDeckTUI._clamp_scroll(lines, 1, 0, 0, 0) == 0
+
+
+def test_clamp_scroll_keeps_selected_visible_on_case_list() -> None:
+    lines = [f"case {i}" for i in range(20)]
+    scroll = BenchDeckTUI._clamp_scroll(lines, 5, 0, 1, 18)
+    assert scroll > 0
+    assert scroll <= 18 - 5 + 2
+
+
+def test_clamp_scroll_non_case_list_ignores_selection() -> None:
+    lines = [f"row {i}" for i in range(50)]
+    scroll = BenchDeckTUI._clamp_scroll(lines, 10, 0, 0, 40)
+    assert scroll == 0
+
+
+# ── subprocess launch ───────────────────────────────────────────────────────
+
+
+def test_launch_run_rejects_missing_agent_file(tmp_path: Path) -> None:
+    tui = BenchDeckTUI(tmp_path, agent_a_path=Path("/nonexistent/agent.md"))
+    tui._launch_run()
+    assert "not found" in tui._status_msg
+
+
+def test_launch_run_uses_snapshot_metadata_fallback(tmp_path: Path) -> None:
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test agent")
+    tui = BenchDeckTUI(tmp_path)
+    tui.snapshot = Snapshot(
+        metadata={"config": {"agent_a": str(agent_path), "model": "gpt-4o"}}
+    )
+    with _mock_popen():
+        tui._launch_run()
+        assert tui._status_msg.startswith("Launched PID")
+        assert tui._proc is not None
+        tui._cancel_run()
+
+
+def test_launch_run_prefers_explicit_args(tmp_path: Path) -> None:
+    agent_a = tmp_path / "explicit_agent.md"
+    agent_a.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_a, model="gpt-4o-mini")
+    tui.snapshot = Snapshot(
+        metadata={"config": {"agent_a": "/other/agent.md", "model": "gpt-4o"}}
+    )
+    with _mock_popen():
+        tui._launch_run()
+        assert tui._status_msg.startswith("Launched PID")
+
+
+# ── case list at narrow width ───────────────────────────────────────────────
+
+
+def test_case_list_renders_at_minimum_width() -> None:
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "A" * 50},
+                    {"id": 2, "title": "BBBB"},
+                ]
+            },
+            judgments=[
+                {"case_id": 1, "agent_label": "agent_a", "overall_rating": "Excellent"},
+            ],
+        ),
+    )
+    lines = tui._case_list(32)
+    assert len(lines) >= 2
+    assert any("Excellent" in line for line in lines)
+
+
+# ── plan warning ────────────────────────────────────────────────────────────
+
+
+def test_detail_shows_orphan_infra_errors() -> None:
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Case", "family": "happy_path", "purpose": "x"},
+                ]
+            },
+            infrastructure_errors=[
+                {"case_id": None, "agent_label": "agent_a", "stage": "planner",
+                 "error_type": "ConfigError", "message": "Bad config"},
+                {"case_id": 1, "agent_label": "agent_a", "stage": "agent",
+                 "error_type": "Timeout", "message": "timed out"},
+            ],
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    assert "Pre-execution infrastructure errors" in text
+    assert "ConfigError" in text
+    assert "Bad config" in text
+    assert "Timeout" in text
+
+
+# ── cancel confirmation ────────────────────────────────────────────────────
+
+
+def test_cancel_requires_double_press(tmp_path: Path) -> None:
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+        assert tui._proc is not None
+    tui._handle_cancel_key()
+    assert tui._proc is not None
+    assert "again" in tui._status_msg.lower()
+    assert tui._cancel_requested_at is not None
+
+
+def test_cancel_double_press_terminates(tmp_path: Path) -> None:
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    tui._handle_cancel_key()
+    tui._handle_cancel_key()
+    assert tui._proc is None
+    assert "Cancelled" in tui._status_msg
