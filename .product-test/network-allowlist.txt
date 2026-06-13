@@ -1,0 +1,6 @@
+# package installation
+pypi.org
+files.pythonhosted.org
+
+# approved live provider
+api.openai.com

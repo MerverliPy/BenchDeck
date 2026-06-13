@@ -1,0 +1,167 @@
+name: BenchDeck Product Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: Python version for the isolated product-test sandbox
+        required: true
+        type: choice
+        default: "3.12"
+        options:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+      run_live_openai:
+        description: Run the budget-limited real OpenAI validation
+        required: true
+        type: boolean
+        default: false
+      model:
+        description: Agent, planner, and judge model for the live validation
+        required: true
+        type: string
+        default: gpt-4o-mini
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchdeck-product-test-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  product-test:
+    # Deliberately requires a controlled runner with rootless Docker. Do not
+    # change this to ubuntu-latest or a rootful Docker runner.
+    runs-on: [self-hosted, linux, rootless-docker]
+    timeout-minutes: 90
+    env:
+      PRODUCT_TEST_ARCHIVE_DIR: ${{ runner.temp }}/benchdeck-product-test-archives
+
+    steps:
+      - name: Checkout exact triggering commit without third-party actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force --detach FETCH_HEAD
+          git clean -ffdx
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Verify controlled runner boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
+          docker info --format '{{json .SecurityOptions}}' | tee /tmp/docker-security-options.json
+          grep -qi rootless /tmp/docker-security-options.json
+          command -v jq >/dev/null
+
+      - name: Create isolated sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .product-test/scripts/sandbox_manager.py create \
+            --python-version "${{ inputs.python_version }}" \
+            --install-dependencies
+
+      - name: Run regression and black-box checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_inside() {
+            local evidence_class="$1"
+            shift
+            local command="$*"
+            local output
+            output="$(python3 .product-test/scripts/sandbox_manager.py exec \
+              --evidence-class "${evidence_class}" \
+              --timeout 1200 \
+              --command "${command}")"
+            printf '%s\n' "${output}"
+            OUTPUT_JSON="${output}" python3 - <<'PY'
+          import json, os
+          result = json.loads(os.environ["OUTPUT_JSON"])
+          raise SystemExit(0 if result.get("exit_code") == 0 else 1)
+          PY
+          }
+
+          run_inside LOCAL_BLACK_BOX_EVIDENCE "python --version"
+          run_inside LOCAL_BLACK_BOX_EVIDENCE "python -m pip check"
+          run_inside SIMULATED_REGRESSION_EVIDENCE "ruff check ."
+          run_inside SIMULATED_REGRESSION_EVIDENCE "ruff format --check ."
+          run_inside SIMULATED_REGRESSION_EVIDENCE "mypy src/benchdeck/"
+          run_inside SIMULATED_REGRESSION_EVIDENCE "pytest --cov=src/benchdeck --cov-report=term-missing --cov-report=json"
+          run_inside LOCAL_BLACK_BOX_EVIDENCE "benchdeck --help"
+          run_inside LOCAL_BLACK_BOX_EVIDENCE "benchdeck inspect fixtures/original_run.zip"
+          run_inside LOCAL_BLACK_BOX_EVIDENCE "benchdeck inspect fixtures/original_run.zip --json"
+
+      - name: Run real PTY smoke validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .product-test/scripts/pty_runner.py \
+            --command "benchdeck tui fixtures/original_run.zip" \
+            --rows 20 \
+            --cols 40 \
+            --actions-json '[{"type":"sleep","seconds":1},{"type":"send","text":"4"},{"type":"expect","contains":"Mobile SSH controls","timeout":5},{"type":"send","text":"q"},{"type":"sleep","seconds":0.5}]'
+
+      - name: Run approved live OpenAI validation
+        if: ${{ inputs.run_live_openai }}
+        shell: bash
+        env:
+          BENCHDECK_TEST_OPENAI_API_KEY: ${{ secrets.BENCHDECK_TEST_OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${BENCHDECK_TEST_OPENAI_API_KEY:-}"
+          key_file="${RUNNER_TEMP}/benchdeck-openai-test-key"
+          umask 077
+          printf '%s' "${BENCHDECK_TEST_OPENAI_API_KEY}" > "${key_file}"
+          export BENCHDECK_TEST_OPENAI_KEY_FILE="${key_file}"
+          python3 .product-test/scripts/live_benchdeck_run.py \
+            --agent-a examples/repository-integrity-agent.md \
+            --model "${{ inputs.model }}" \
+            --planner-model "${{ inputs.model }}" \
+            --judge-model "${{ inputs.model }}" \
+            --judges 1 \
+            --timeout 90 \
+            --max-retries 3 \
+            --max-logical-requests 30 \
+            --max-http-attempts 45 \
+            --max-total-input-tokens 120000 \
+            --max-total-output-tokens 30000 \
+            --max-output-tokens-planner 4000 \
+            --max-output-tokens-agent 4000 \
+            --max-output-tokens-judge 4000
+          rm -f "${key_file}"
+
+      - name: Archive evidence on controlled runner
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${PRODUCT_TEST_ARCHIVE_DIR}"
+          if test -d .test-evidence; then
+            archive="${PRODUCT_TEST_ARCHIVE_DIR}/${GITHUB_REPOSITORY//\//-}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
+            tar -czf "${archive}" .test-evidence
+            sha256sum "${archive}" | tee "${archive}.sha256"
+            {
+              echo "## BenchDeck product-test evidence"
+              echo
+              echo "Controlled-runner archive: \`${archive}\`"
+              echo
+              echo "SHA-256 file: \`${archive}.sha256\`"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "No evidence directory was created." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Destroy sandbox
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python3 .product-test/scripts/sandbox_manager.py destroy --purge || true

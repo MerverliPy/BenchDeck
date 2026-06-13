@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "python_versions": [
+    "3.11",
+    "3.12",
+    "3.13"
+  ],
+  "host_primary": "WSL2 Ubuntu",
+  "host_design_goal": "portable Unix host with rootless Docker",
+  "tui_profiles": [
+    {
+      "name": "too-narrow",
+      "cols": 31,
+      "rows": 10,
+      "expected": "Terminal too small"
+    },
+    {
+      "name": "too-short",
+      "cols": 32,
+      "rows": 9,
+      "expected": "Terminal too small"
+    },
+    {
+      "name": "minimum",
+      "cols": 32,
+      "rows": 10
+    },
+    {
+      "name": "mobile-ssh",
+      "cols": 40,
+      "rows": 20
+    },
+    {
+      "name": "standard",
+      "cols": 80,
+      "rows": 24
+    },
+    {
+      "name": "wide",
+      "cols": 120,
+      "rows": 40
+    }
+  ],
+  "cli_commands": [
+    "benchdeck --help",
+    "benchdeck run --help",
+    "benchdeck tui --help",
+    "benchdeck inspect --help",
+    "benchdeck inspect fixtures/original_run.zip",
+    "benchdeck inspect fixtures/original_run.zip --json"
+  ],
+  "live_api_defaults": {
+    "model": "gpt-4o-mini",
+    "planner_model": "gpt-4o-mini",
+    "judge_model": "gpt-4o-mini",
+    "judges": 1,
+    "max_logical_requests": 30,
+    "max_http_attempts": 45,
+    "max_total_input_tokens": 120000,
+    "max_total_output_tokens": 30000,
+    "max_output_tokens_planner": 4000,
+    "max_output_tokens_agent": 4000,
+    "max_output_tokens_judge": 4000
+  }
+}

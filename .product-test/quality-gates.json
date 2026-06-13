@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "required_regression_commands": [
+    "ruff check .",
+    "ruff format --check .",
+    "mypy src/benchdeck/",
+    "pytest --cov=src/benchdeck --cov-report=term-missing --cov-report=json"
+  ],
+  "python_matrix": [
+    "3.11",
+    "3.12",
+    "3.13"
+  ],
+  "coverage": {
+    "require_no_regression_from_captured_baseline": true,
+    "fixed_minimum_percent": null,
+    "note": "Feature traceability and real behavior evidence are mandatory; line coverage alone is not a release gate."
+  },
+  "required_interfaces": {
+    "cli": true,
+    "tui": true,
+    "openai_integration": true,
+    "artifact_directory_and_zip": true,
+    "webui": "conditional",
+    "server_api": "conditional"
+  },
+  "final_verdicts": [
+    "PASS",
+    "PASS_WITH_APPROVED_EXCEPTIONS",
+    "FAIL",
+    "BLOCKED",
+    "INCONCLUSIVE"
+  ],
+  "pass_conditions": [
+    "all discovered features have traceability records",
+    "all applicable runtime paths have real evidence",
+    "no unexplained skips",
+    "no unresolved P0 or P1 findings",
+    "material results independently reproduced",
+    "live OpenAI integration passed or verdict is BLOCKED/INCONCLUSIVE",
+    "patch scope is bounded and verified"
+  ]
+}

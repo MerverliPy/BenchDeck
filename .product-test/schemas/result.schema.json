@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BenchDeck Product Test Result",
+  "type": "object",
+  "required": [
+    "run_id",
+    "test_id",
+    "feature_id",
+    "evidence_class",
+    "status",
+    "expected",
+    "actual"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "test_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "feature_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "interface": {
+      "type": "string"
+    },
+    "evidence_class": {
+      "enum": [
+        "STATIC_EVIDENCE",
+        "SIMULATED_REGRESSION_EVIDENCE",
+        "LOCAL_BLACK_BOX_EVIDENCE",
+        "PTY_EVIDENCE",
+        "LIVE_EXTERNAL_EVIDENCE",
+        "INDEPENDENT_REPRODUCTION"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED_WITH_REASON",
+        "NOT_APPLICABLE",
+        "FLAKY",
+        "INCONCLUSIVE"
+      ]
+    },
+    "expected": {},
+    "actual": {},
+    "severity": {
+      "enum": [
+        "P0",
+        "P1",
+        "P2",
+        "P3",
+        "NONE"
+      ]
+    },
+    "evidence_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reproduction": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

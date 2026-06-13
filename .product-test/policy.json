@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "repository": "MerverliPy/BenchDeck",
+  "baseline_commit": "e3405fbd072f6213787d616b0c2636b11a2a4095",
+  "sandbox": {
+    "rootless_docker_required": true,
+    "non_root_container_required": true,
+    "source_repo_mount_forbidden": true,
+    "docker_socket_mount_forbidden": true,
+    "cap_drop_all": true,
+    "no_new_privileges": true,
+    "read_only_root": true,
+    "general_network": "none",
+    "cpus": 2.0,
+    "memory": "4g",
+    "pids_limit": 512,
+    "tmpfs_size": "512m",
+    "default_timeout_seconds": 300
+  },
+  "evidence": {
+    "directory": ".test-evidence",
+    "preserve_on_destroy": true,
+    "record_stdout": true,
+    "record_stderr": true,
+    "record_hashes": true,
+    "record_retry_history": true
+  },
+  "secrets": {
+    "copy_into_general_sandbox": false,
+    "live_key_file_env": "BENCHDECK_TEST_OPENAI_KEY_FILE",
+    "require_mode_0600_or_stricter": true,
+    "redact_patterns": [
+      "sk-[A-Za-z0-9_-]{10,}"
+    ]
+  },
+  "no_mock_product_pass": true,
+  "sensitive_path_patterns": [
+    ".env",
+    ".env.*",
+    "**/.env",
+    "**/.env.*",
+    ".envrc",
+    "*.pem",
+    "*.key",
+    "*credentials*",
+    "**/.git/**"
+  ],
+  "network_allowlists": {
+    "package": [
+      "pypi.org",
+      "files.pythonhosted.org"
+    ],
+    "live_openai": [
+      "api.openai.com"
+    ]
+  }
+}
