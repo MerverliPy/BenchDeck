@@ -1,8 +1,8 @@
 # BenchDeck — Remaining Issues
 
-**Date:** 2026-06-12
-**Baseline:** 349 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict on `src/` and `tests/`) · 77% coverage
-**Status:** All Phase 1-7 features implemented. All 20 prior audit findings resolved and revalidated. Latest audit (2026-06-12 r2): 1 P0 (credential in `.envrc` — intentional/scoped via direnv), 2 P2 (stale docs, uncommitted `.gitignore`), 3 P3 (stale docs, stale dist, working-tree state).
+**Date:** 2026-06-13
+**Baseline:** 352 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict on `src/` and `tests/`) · 81% coverage
+**Status:** All Phase 1-7 features implemented. All 20 prior audit findings resolved and revalidated. 2026-06-13 full product test (run id `20260613T191610Z-a5e38c42`): 0 P0, 0 P1, 1 P2 (loader contract drift — resolved in commit `bcbf396` with `strict=True` opt-in), 5 P3 (3 environment-blocked, 1 spec conflict, 1 perf note). Live OpenAI evidence BLOCKED by sandbox network policy + no dedicated test key; Python 3.11/3.13 matrix BLOCKED by sandbox image (covered by CI on `push` to `main`).
 
 ---
 
@@ -10,7 +10,7 @@
 
 | ID | Issue | Resolution |
 |----|-------|------------|
-| B1 | ZIP duplicate basename silently overwrites | Fixed: `_load_zip_bytes` now raises `ValueError`. `_load_zip_snapshot` + `load_snapshot` catch and return empty Snapshot. Test updated. |
+| B1 | ZIP duplicate basename silently overwrites | Fixed (2026-06-11): `_load_zip_bytes` raises `ValueError`. `_load_zip_snapshot` + `load_snapshot` catch and return empty Snapshot. Test updated. **Re-fixed (2026-06-13, commit `bcbf396`):** added `strict: bool = False` parameter to `load_snapshot()` and `_load_zip_snapshot()` so audit callers can opt into loud failure; default behaviour (empty `Snapshot()` returned) is preserved for TUI resilience. The same change also makes the silent `return Snapshot()` paths for the 1000-member cap and the 256 MiB per-member cap raise `ValueError` so the security-relevant violations are surfaced to strict callers. 3 new regression tests in `tests/test_loader.py`. |
 | B2 | `inspect.py` imports `tui.py` | Fixed: extracted `loader.py` module with `Snapshot`, `load_snapshot`, `_load_zip_bytes`. `inspect.py` and `tui.py` both import from `loader.py`. |
 | B5 | Gateway params typed as `Any` | Fixed: added `GatewayProtocol` in `openai_gateway.py`. Runner uses `GatewayProtocol \| None`. |
 | B6 | No SIGTERM handler | Fixed: signal handler sets `_shutdown` flag; checked between cases; clean abort with metadata write. |
@@ -72,4 +72,4 @@ python -m mypy --no-incremental src/benchdeck
 python -m pytest -q
 ```
 
-Expected: all clean, 349 tests passed (2 skipped).
+Expected: all clean, 352 tests passed (2 skipped) — 349 pre-existing + 3 new `test_loader.py` regression tests for SEC-004/005/006.
