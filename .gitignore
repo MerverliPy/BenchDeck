@@ -12,3 +12,5 @@ build/
 .env
 .envrc
 benchmark_out/
+*_real.png
+my_agent.md
