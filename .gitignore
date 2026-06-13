@@ -10,4 +10,5 @@ build/
 *.egg-info/
 .venv/
 .env
+.envrc
 benchmark_out/

@@ -43,6 +43,8 @@ class BenchDeckTUI:
         self._judge_model = judge_model
         self._cancel_requested_at: float | None = None
         self._has_color = False
+        self._stderr_handle: Any = None
+        self._stderr_log: Path | None = None
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -134,6 +136,12 @@ class BenchDeckTUI:
         plan_data = self.snapshot.plan
         if plan_data and not plan_data.get("cases") and not self._status_msg:
             self._status_msg = "WARNING: plan loaded but contains no cases"
+        elif (
+            plan_data
+            and plan_data.get("cases")
+            and self._status_msg == "WARNING: plan loaded but contains no cases"
+        ):
+            self._status_msg = ""
         view_height = height - 4
         self.scroll = self._clamp_scroll(lines, view_height, self.scroll, self.tab, self.selected)
         viewport = lines[self.scroll : self.scroll + view_height]
@@ -297,12 +305,19 @@ class BenchDeckTUI:
                 result = self._result_for(case_id, agent)
                 if result:
                     lines += _section("Agent output", str(result.get("final_output", "")), width)
-        elif self._result_for(case_id):
-            result = self._result_for(case_id)
-            if result and result.get("infrastructure_error"):
-                lines += ["Infrastructure error: empty output after retries"]
         else:
-            lines += ["No judgment yet."]
+            agent_results = {}
+            for agent_label in self.snapshot.results:
+                r = self._result_for(case_id, agent_label=agent_label)
+                if r and r.get("infrastructure_error"):
+                    agent_results[agent_label] = r
+            if agent_results:
+                for agent_label in agent_results:
+                    lines += [
+                        f"Agent {agent_label}: infrastructure error — empty output after retries"
+                    ]
+            else:
+                lines += ["No judgment yet."]
         # Show disagreement when multiple judges differ
         if len(case_judgments) > 1:
             ratings = {j.get("overall_rating", "?") for j in case_judgments}
@@ -437,10 +452,17 @@ class BenchDeckTUI:
             return
         rc = self._proc.poll()
         if rc is not None:
+            if self._stderr_handle:
+                self._stderr_handle.close()
+                self._stderr_handle = None
             tag = "ok" if rc == 0 else f"exit={rc}"
-            self._status_msg = f"Subprocess {self._proc.pid}: {tag}"
+            msg = f"Subprocess {self._proc.pid}: {tag}"
+            if rc != 0 and self._stderr_log:
+                msg += f" (log: {self._stderr_log.name})"
+            self._status_msg = msg
             self._proc = None
             self._proc_run_dir = None
+            self._stderr_log = None
 
     def _launch_run(self) -> None:
         if self._proc is not None:
@@ -476,10 +498,13 @@ class BenchDeckTUI:
         if agent_b and agent_b.exists():
             cmd += ["--agent-b", str(agent_b)]
         try:
+            stderr_log = run_dir.parent / f"benchdeck_{run_dir.name}.log"
+            self._stderr_log = stderr_log
+            self._stderr_handle = open(stderr_log, "wb")  # noqa: SIM115
             self._proc = _sp.Popen(
                 cmd,
-                stdout=_sp.DEVNULL,
-                stderr=_sp.DEVNULL,
+                stdout=self._stderr_handle,
+                stderr=_sp.STDOUT,
             )
             self._proc_run_dir = run_dir
             self._status_msg = f"Launched PID {self._proc.pid} → {run_dir.name}"
@@ -508,9 +533,13 @@ class BenchDeckTUI:
             self._proc.wait(timeout=5)
         except _sp.TimeoutExpired:
             self._proc.kill()
+        if self._stderr_handle:
+            self._stderr_handle.close()
+            self._stderr_handle = None
         self._status_msg = f"Cancelled PID {pid}"
         self._proc = None
         self._proc_run_dir = None
+        self._stderr_log = None
 
     @staticmethod
     def _clamp_scroll(

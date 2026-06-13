@@ -1,6 +1,6 @@
 # OpenCode Implementation Phases — BenchDeck
 
-This document is designed to be pasted directly into an OpenCode agent. It instructs the agent to inspect the repository, confirm the defects, and then implement the repair in controlled phases.
+**Note (2026-06-12):** All Phases 0-7 described in this document have been completed. This file is retained as a historical reference showing the original repair plan. See `REMAINING_ISSUES.md` and `AGENT_HANDOFF.md` for current status.
 
 ---
 
@@ -37,13 +37,14 @@ pytest -q
 pytest --cov=benchdeck --cov-branch --cov-report=term-missing
 python -m build
 
-KNOWN BASELINE (updated 2026-06-11)
-- 187 tests pass across gateway, runner, models, prompts, reporting, scoring, storage, TUI, and loader.
-- ruff check, ruff format --check, and mypy (with --ignore-missing-imports) all pass clean.
-- All known bugs from original and Phase 1 audit resolved. See REMAINING_ISSUES.md for remaining limitations.
+KNOWN BASELINE (updated 2026-06-12)
+- 349 tests pass (2 skipped), 77% coverage.
+- ruff check, ruff format --check, and mypy (strict on `src/benchdeck` and `tests/`) all pass clean.
+- All Phase 0-7 work completed. 20 prior audit findings resolved and revalidated.
+- All known bugs from original audit resolved. See REMAINING_ISSUES.md for remaining limitations.
 - P1 items not yet implemented: multi-judge aggregation, JSON Schema manifest validation.
-- P2 items not yet implemented: TUI subprocess launch/cancel, budget/cost controls.
-- P3 items not yet implemented: package release publishing, signed artifacts, SBOM.
+- P2 items not yet implemented: budget/cost controls.
+- P3 items not yet implemented: package release publishing, signed artifacts, SBOM, inspector hardening.
 
 DELIVERY FORMAT
 For each phase:

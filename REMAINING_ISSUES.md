@@ -1,8 +1,8 @@
 # BenchDeck — Remaining Issues
 
 **Date:** 2026-06-12
-**Baseline:** 347 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict) · 81% coverage
-**Status:** All Phase 1-7 features implemented. 7 open audit findings (1 P1, 2 P2, 4 P3) from 2026-06-12 audit.
+**Baseline:** 349 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict on `src/` and `tests/`) · 77% coverage
+**Status:** All Phase 1-7 features implemented. All 20 prior audit findings resolved and revalidated. Latest audit (2026-06-12 r2): 1 P0 (credential in `.envrc` — intentional/scoped via direnv), 2 P2 (stale docs, uncommitted `.gitignore`), 3 P3 (stale docs, stale dist, working-tree state).
 
 ---
 
@@ -36,9 +36,9 @@
 
 ---
 
-## Open Audit Findings (2026-06-12)
+## Resolved Audit Findings (2026-06-12 r1)
 
-See `AGENT_HANDOFF.md` for full details.
+All findings from the first 2026-06-12 audit round are resolved. See `AGENT_HANDOFF.md` for full details.
 
 | ID | Severity | Description |
 |----|----------|-------------|
@@ -46,20 +46,20 @@ See `AGENT_HANDOFF.md` for full details.
 | AUD-P2-001 | P2 | String `"timeout"` where `ErrorCategory.TIMEOUT` expected (FIXED) |
 | AUD-P2-002 | P2 | `sys.path.insert()` hack in test_screenshots.py (FIXED) |
 | AUD-P3-001 | P3 | Stale docs: this file and IMPLEMENTATION_CHECKLIST.md (FIXED) |
-| AUD-P3-002 | P3 | ~16 mypy errors in `tests/` |
-| AUD-P3-003 | P3 | `__main__.py` 0% test coverage |
+| AUD-P3-002 | P3 | ~16 mypy errors in `tests/` (FIXED — mypy clean on `src/` and `tests/` in strict mode) |
+| AUD-P3-003 | P3 | `__main__.py` 0% test coverage (NOTED — entry point; covered by CLI integration tests) |
 | AUD-P3-004 | P3 | `duplicate_keys` always empty in CoverageReport (FIXED) |
 
 ---
 
 ## Remaining Known Limitations
 
-- **No PyPI release or signed artifacts.** Code is publishable; CI workflow and SBOM not yet set up.
-- **No SDK structured output for planner/judge.** Text-to-JSON fallback is adequate; SDK-native would reduce brittleness.
+- **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`) and release with SBOM (`release.yml`) exist but have not been triggered (no `v*` tag pushed).
 - **Inspector hardening pending.** `inspect.py` validates schema but not checksums, referential integrity, or counter consistency.
 - **No cross-process run lock.** `storage.py` uses atomic writes but concurrent writers could race.
 - **No Windows testing.** Developed and tested on Linux only.
-- **No dependency lock file.** `requirements.txt` provides reproducible pins.
+- **No dependency lock file.** `requirements.txt` provides reproducible pins; no `requirements.lock` or `uv.lock`.
+- **`dist/` artifacts stale.** (Built 2026-06-11; source has changed.) Not committed — `dist/` is gitignored.
 
 ---
 
@@ -72,4 +72,4 @@ python -m mypy --no-incremental src/benchdeck
 python -m pytest -q
 ```
 
-Expected: all clean, 347 tests passed (2 skipped).
+Expected: all clean, 349 tests passed (2 skipped).

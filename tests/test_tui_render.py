@@ -434,3 +434,29 @@ def test_cancel_double_press_terminates(tmp_path: Path) -> None:
     tui._handle_cancel_key()
     assert tui._proc is None
     assert "Cancelled" in tui._status_msg
+
+
+def test_cancel_cleared_by_any_other_key(tmp_path: Path) -> None:
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    tui._handle_cancel_key()
+    assert tui._cancel_requested_at is not None
+    tui._handle_key(ord("j"))
+    assert tui._cancel_requested_at is None
+    assert tui._proc is not None
+
+
+def test_cancel_timeout_clears_request(tmp_path: Path) -> None:
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    tui._handle_cancel_key()
+    assert tui._cancel_requested_at is not None
+    tui._cancel_requested_at = tui._cancel_requested_at - 10.0
+    tui._handle_key(ord(" "))
+    assert tui._cancel_requested_at is None
