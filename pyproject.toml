@@ -48,6 +48,15 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Test-harness tooling lives outside the product surface and uses a
+# different style (no type annotations, sys.path manipulation, in-process
+# subprocess orchestration). Excluded from ruff so product lint/format
+# gates stay focused on src/ and tests/. Same rationale as the existing
+# per-file-ignores for scripts/generate_demo_screens.py below.
+extend-exclude = [
+    ".opencode",
+    ".product-test",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
