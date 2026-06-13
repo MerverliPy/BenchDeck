@@ -1,6 +1,6 @@
-# Repository Documentation OpenCode Workflow
+# BenchDeck Repository Documentation OpenCode Workflow
 
-This package installs a reusable, evidence-driven documentation-maintenance workflow for OpenCode.
+BenchDeck now includes an evidence-driven documentation-maintenance workflow for OpenCode. It is calibrated to the repository's Python CLI, benchmark artifacts, configuration, tests, CI, TUI, screenshots, release files, and documentation structure.
 
 ## Included
 
@@ -31,16 +31,23 @@ This package installs a reusable, evidence-driven documentation-maintenance work
     └── RUBRIC.md
 ```
 
-## Installation
+## BenchDeck configuration status
 
-1. Extract or copy the `.opencode` directory into the repository root.
-2. Review `.opencode/documentation/repository-profile.md` and replace only values that can be verified.
-3. Add verified repository documentation/test commands to `.opencode/documentation/validation-profile.md`.
-4. Merge the relevant guidance from `.opencode/documentation/AGENTS_SNIPPET.md` into the repository's existing `AGENTS.md`; do not replace existing project instructions.
-5. Start OpenCode from the repository root.
-6. Confirm the `repository-docs` agent and documentation commands are discoverable.
-7. Run `/docs-audit` before the first update.
-8. Run the benchmark suite before treating customized instructions as stable.
+- `.opencode/documentation/repository-profile.md` is populated with verified BenchDeck paths, terminology, protected evidence, and command sources.
+- `.opencode/documentation/validation-profile.md` maps documentation claims to BenchDeck's CI, targeted tests, CLI help, fixture inspection, and static checks.
+- The workflow does not replace or modify the existing `repo-auditor`, TUI agents, or their commands.
+- `AGENTS_SNIPPET.md` remains optional because BenchDeck currently has no root `AGENTS.md`. Merge it only when adopting repository-wide OpenCode instructions.
+
+Re-verify the profiles after material changes to `src/benchdeck/cli.py`, `src/benchdeck/config.py`, schemas, packaging, CI, release workflows, documentation layout, or test names.
+
+## First use after merge
+
+1. Start or restart OpenCode from the BenchDeck repository root.
+2. Confirm `repository-docs` appears as a primary and delegatable agent.
+3. Confirm `/docs-audit`, `/docs-update`, `/docs-changed`, `/docs-verify`, and `/docs-release` are discoverable.
+4. Run the initial read-only audit below.
+5. Review contradictions and approval-gated proposals before running an update.
+6. Run the benchmark suite before changing the agent, skills, permissions, or policy.
 
 ## Commands
 
@@ -57,27 +64,51 @@ The agent can also be invoked directly with `@repository-docs` or selected as a 
 ## Initial recommended run
 
 ```text
-/docs-audit complete repository documentation; prioritize README onboarding, verified features, installation, configuration, examples, support paths, and contradictions with current implementation
+/docs-audit audit all current BenchDeck documentation against source, CLI help, configuration, tests, schemas, fixtures, CI, and release metadata; prioritize README feature and limitation claims, installation, run/tui/inspect commands, benchmark artifacts, mobile TUI behavior, known issues, and stale statements
 ```
+
+The current README should receive particular scrutiny because current CLI implementation includes configuration, budget, resume, logging, multi-judge, and TUI run-launch surfaces that may be newer than narrative limitation text.
 
 After reviewing the audit:
 
 ```text
-/docs-update apply all low-risk, evidence-backed documentation corrections from the audit; preserve approval-gated actions as proposals
+/docs-update apply all low-risk, E1/E2-supported BenchDeck documentation corrections from the audit; preserve policy, compatibility, release-history, README-restructure, deletion, rename, and commit actions as approval-gated proposals
 ```
 
 ## Approval behavior
 
-Routine evidence-backed documentation corrections may be applied directly. The agent must request explicit approval before deleting, moving, renaming, materially restructuring the README, changing compatibility/support promises, changing policy documents, altering published release history, creating a major documentation hierarchy, or committing.
+Routine evidence-backed documentation corrections may be applied directly. Explicit approval is required before:
 
-## Repository intake
+- deleting, moving, or renaming documentation;
+- materially restructuring or replacing `README.md`;
+- changing compatibility, support, stability, deprecation, artifact-format, or schema guarantees;
+- changing `SECURITY.md`, `CONTRIBUTING.md`, governance, conduct, or license policy;
+- changing package versions, published dates, release history, release workflows, or known-issue resolution status;
+- changing screenshot baselines or representing synthetic screenshots as live-run captures;
+- creating a major documentation hierarchy;
+- committing changes.
 
-For a private or unpublished repository, provide the complete repository as a ZIP or run this package locally inside the repository. For a public repository, provide the GitHub URL or clone the repository before running OpenCode.
+The agent never pushes and does not modify implementation source, schemas, tests, fixtures, screenshot baselines, dependencies, or release artifacts.
 
-## Customization rules
+## Validation behavior
 
-- Keep the main agent model unset so it inherits the active OpenCode model.
-- Tighten permissions rather than broadening them when repository constraints are known.
-- Add repository-specific validation commands only after verifying them.
-- Preserve the evidence hierarchy and approval gates when shortening the prompt.
-- Run all release-blocking benchmark cases after any behavior change.
+Use the narrowest check that proves each changed claim. BenchDeck's configured profile includes:
+
+- Git diff and changed-path checks;
+- local link, anchor, image, and repository-path verification;
+- `ruff`, formatting, mypy, and full-test commands from CI;
+- focused CLI/config/inspect and TUI test groups;
+- CLI help and fixture inspection commands;
+- screenshot provenance and secret-exposure checks.
+
+Commands that execute repository code, use the network, install dependencies, generate screenshots, or access model APIs remain approval-gated. Unavailable checks must be reported as **Not run**, never as passing.
+
+## Benchmarking changes to the workflow
+
+Use `.opencode/benchmarks/repository-docs/` after changing the agent or its support files. Release requires:
+
+- all 16 cases evaluated in isolated contexts;
+- no critical failure;
+- at least 90/100 overall;
+- at least 95% of available factual-grounding and safety points;
+- no failures in cases 2, 3, 4, 5, 6, 11, 12, or 13.
