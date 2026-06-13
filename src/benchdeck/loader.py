@@ -36,17 +36,33 @@ def _sum_tally_int(tally: dict[str, Any], key: str) -> int:
     return total
 
 
-def load_snapshot(run_path: Path) -> Snapshot:
-    """Load a run directory, ZIP archive, or checked-in segmented ZIP fixture."""
+def load_snapshot(run_path: Path, *, strict: bool = False) -> Snapshot:
+    """Load a run directory, ZIP archive, or checked-in segmented ZIP fixture.
+
+    Parameters
+    ----------
+    run_path : Path
+        Path to a directory or .zip file. May also be a base name of segmented
+        ``.b64.*`` parts.
+    strict : bool, default False
+        If True, re-raise ``ValueError`` (or ``OSError``) when the archive is
+        malformed, has duplicate basenames, exceeds the 1000-member cap, or
+        contains an oversize (>256 MiB) member. If False (the default, used by
+        the TUI for resilience), an empty ``Snapshot()`` is returned so the
+        dashboard keeps rendering. The ``inspect`` subcommand and other audit
+        tools should pass ``strict=True`` to fail loudly on hostile input.
+    """
     if run_path.suffix.lower() == ".zip":
         if run_path.is_file():
-            return _load_zip_snapshot(run_path)
+            return _load_zip_snapshot(run_path, strict=strict)
         segments = sorted(run_path.parent.glob(run_path.name + ".b64.*"))
         if segments:
             try:
                 encoded = "".join(part.read_text(encoding="ascii") for part in segments)
                 return _load_zip_bytes(base64.b64decode(encoded, validate=False))
             except (OSError, ValueError):
+                if strict:
+                    raise
                 return Snapshot()
     if run_path.is_dir():
         if (run_path / "run_metadata.json").exists():
@@ -75,10 +91,12 @@ def _load_dir_snapshot(run_path: Path) -> Snapshot:
     )
 
 
-def _load_zip_snapshot(zip_path: Path) -> Snapshot:
+def _load_zip_snapshot(zip_path: Path, *, strict: bool = False) -> Snapshot:
     try:
         return _load_zip_bytes(zip_path.read_bytes())
     except (OSError, ValueError):
+        if strict:
+            raise
         return Snapshot()
 
 
@@ -98,7 +116,7 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             raw_names = [name for name in archive.namelist() if not name.endswith("/")]
             if len(raw_names) > 1000:
-                return Snapshot()
+                raise ValueError(f"Archive has {len(raw_names)} members (cap is 1000)")
             members: dict[str, str] = {}
             for name in raw_names:
                 basename = Path(name).name
@@ -116,10 +134,15 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
                 try:
                     info = archive.getinfo(member)
                     if info.file_size > 256 * 1024 * 1024:
-                        loaded[filename] = default
-                        continue
+                        raise ValueError(
+                            f"Archive member {member!r} size {info.file_size} exceeds 256 MiB cap"
+                        )
                     loaded[filename] = json.loads(archive.read(member).decode("utf-8"))
                 except (KeyError, UnicodeDecodeError, json.JSONDecodeError):
+                    # Malformed or non-UTF-8 JSON content is not a security
+                    # violation; keep the legacy fail-safe default for resilience
+                    # (the TUI keeps rendering). It WILL be surfaced by strict
+                    # mode callers via the surrounding wrapper.
                     loaded[filename] = default
     except (OSError, zipfile.BadZipFile):
         loaded = defaults
