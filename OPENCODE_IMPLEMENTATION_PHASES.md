@@ -42,9 +42,9 @@ KNOWN BASELINE (updated 2026-06-12)
 - ruff check, ruff format --check, and mypy (strict on `src/benchdeck` and `tests/`) all pass clean.
 - All Phase 0-7 work completed. 20 prior audit findings resolved and revalidated.
 - All known bugs from original audit resolved. See REMAINING_ISSUES.md for remaining limitations.
-- P1 items not yet implemented: multi-judge aggregation, JSON Schema manifest validation.
-- P2 items not yet implemented: budget/cost controls.
-- P3 items not yet implemented: package release publishing, signed artifacts, SBOM, inspector hardening.
+- P1: Multi-judge aggregation and JSON Schema manifest validation implemented.
+- P2: Budget/cost controls implemented.
+- P3 items not yet implemented: package release publishing, signed artifacts, SBOM.
 
 DELIVERY FORMAT
 For each phase:
