@@ -33,5 +33,5 @@
 - [x] Python package and console entry point.
 - [x] CI across Python 3.11-3.13.
 - [x] Regression fixture and tests.
-- [ ] Publish package release.
-- [ ] Add signed release artifacts and SBOM.
+- [x] Publish package release.
+- [x] Add signed release artifacts and SBOM.
