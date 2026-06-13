@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.1.2 — 2026-06-13
+
+### Added
+
+- **Self-hosted runner setup runbook.** Complete, executable guide for
+  provisioning a Windows 11 + WSL2 Ubuntu host with rootless Docker so
+  the `.github/workflows/benchdeck-product-test.yml` workflow can run
+  end-to-end. The canonical runbook lives at `docs/runner-setup.md`;
+  one-line discoverability pointers are at `RUNNER_SETUP.md` (repo
+  root) and `.product-test/runner-setup.md` (test-infra tree). The
+  runbook covers 9 phases — pre-flight, WSL2 tuning, rootless Docker
+  install, system tools, dedicated runner user lockdown, runner
+  install + systemd service + auto-update, first end-to-end workflow
+  run, polish (daily health cron, disk-pressure watchdog, evidence
+  archive to Windows host, logrotate, WSL2 keepalive Task Scheduler
+  entry, re-verification), and optional live OpenAI wiring — with
+  per-step `<!-- phase-N: status -->` / `<!-- step-N.M: status -->`
+  markers and a one-grep resume command for agents resuming work.
+  Targets the kit: Windows 11 host, WSL2 Ubuntu, RTX 4070 (unused
+  by the workflow), 48 GB RAM, i7-9xxx CPU. Caps WSL2 at 32 GB;
+  concurrency at 2; runner user `benchdeck-runner` (UID 1001) with
+  sudo restricted to one command.
+
+- **`scripts/benchdeck-runner-smoke-test.sh`.** Executable one-shot
+  boundary check that proves the runner's environment matches what
+  the workflow's "Verify controlled runner boundary" step asserts:
+  docker reachable, rootless mode reported in `docker info`, `jq`
+  installed, and a disposable alpine container with
+  `--cap-drop=ALL --read-only --network=none` successfully runs the
+  (non-root, no docker.sock, no external network) boundary
+  assertions. Returns coloured pass/fail output and a non-zero exit
+  code on any failure. Designed to be safe to run repeatedly and
+  cheap enough to schedule daily.
+
+- **Optional live OpenAI evidence path documented end-to-end.** Phase
+  8 of the runbook covers: minting a dedicated test key with a $5
+  hard spend cap, adding it as the `BENCHDECK_TEST_OPENAI_API_KEY`
+  repo secret, triggering a live workflow run, and confirming via
+  grep that the key never appears in the archived evidence (the
+  `sandbox_manager.py` redaction rule on `sk-[A-Za-z0-9_-]{10,}`
+  makes that a hard guarantee, not a hope). 90-day key rotation
+  cadence documented as a calendar reminder.
+
 ## 0.1.1 — 2026-06-13
 
 ### Fixed
