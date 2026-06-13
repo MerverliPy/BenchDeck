@@ -9,7 +9,7 @@
 - Separate policy-block and infrastructure-failure accounting.
 - Original benchmark bundle included as a regression fixture.
 
-### Known Issues
+### Known Issues (resolved post-v0.1.0)
 
 - **ZIP duplicate basename silently overwrites (BUG-3).** Two ZIP entries sharing the same
   basename in different directories result in a silent last-one-wins overwrite rather than

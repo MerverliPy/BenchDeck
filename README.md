@@ -97,6 +97,8 @@ The TUI targets 32-column terminals. Arrow keys and letter keys both work — no
 | `j` / `k` or `↓` / `↑` | Move selection or scroll |
 | `Enter` | Open selected case |
 | `e` | Export case as Markdown |
+| `n` | Launch a new benchmark run (subprocess) |
+| `x` | Cancel running benchmark (press twice to confirm) |
 | `r` | Reload artifacts |
 | `q` / `Esc` | Quit |
 
@@ -106,6 +108,18 @@ Recommended Termius settings: UTF-8, monospace font, extra keyboard row with Esc
 
 ## CLI Reference
 
+### Global flags
+
+```bash
+benchdeck [--config <file.toml>] [--log-level DEBUG|INFO|WARNING|ERROR|CRITICAL] [--log-file <path>] {run,tui,inspect}
+```
+
+| Flag | Description |
+|---|---|
+| `--config` | Path to a TOML configuration file (searched in `~/.config/benchdeck/config.toml`, `./benchdeck.toml`, then explicit path) |
+| `--log-level` | Logging level (default: `WARNING`) |
+| `--log-file` | Write JSON-structured logs to a file |
+
 ### `benchdeck run`
 
 ```bash
@@ -113,9 +127,23 @@ benchdeck run \
   --agent-a <agent.md>              # required: first agent Markdown file
   --agent-b <agent.md>              # optional: second agent for comparison mode
   --model gpt-4o-mini               # model for agent (default: gpt-4o-mini)
+  --planner-model gpt-4o-mini       # model for plan generation (defaults to --model)
   --judge-model gpt-4o-mini         # model for judge (default: gpt-4o-mini)
   --plan benchmark_plan.json        # optional: use a frozen plan instead of generating one
   --output-dir benchmark_out        # output directory for artifacts (short: -o)
+  --timeout 90                      # API timeout in seconds (default: 90)
+  --max-retries 3                   # max retry attempts per call (default: 3)
+  --judges 1                        # number of independent judge calls per case (default: 1)
+  --capture-level full              # response capture detail: minimal, standard, or full
+  --resume <run_dir>                # resume an interrupted run from the given directory
+  --overwrite                       # overwrite if a prior run exists at the exact output path
+  --max-output-tokens-planner N     # budget: max output tokens for the planner
+  --max-output-tokens-agent N       # budget: max output tokens for the agent
+  --max-output-tokens-judge N       # budget: max output tokens for the judge
+  --max-logical-requests N          # budget: max logical (API) requests
+  --max-http-attempts N             # budget: max HTTP attempts (incl. retries)
+  --max-total-input-tokens N        # budget: max total input tokens
+  --max-total-output-tokens N       # budget: max total output tokens
 ```
 
 ### `benchdeck tui`
@@ -161,12 +189,16 @@ Agent.md ──► Plan ──► Execute ──► Judge ──► Artifacts �
                                Infra failure log
 ```
 
-Five modules:
+Eight modules:
+
 1. **Planning** (`prompts.py`, `openai_gateway.py`) — generate or load a versioned benchmark plan from agent Markdown
-2. **Execution** (`runner.py`) — run each case with one clarification turn; retry empty responses; classify failures
-3. **Judging** (`runner.py`, `models.py`) — evaluate output independently; 8-dimension typed rubric; deterministic fallback rating
+2. **Execution** (`runner.py`) — run each case with one clarification turn; retry empty responses; classify failures; budget enforcement; resume interrupted runs
+3. **Judging** (`runner.py`, `models/`) — evaluate output independently; 8-dimension typed rubric; multi-judge with disagreement detection
 4. **Artifacts** (`storage.py`) — atomically checkpoint JSON; concurrent-reader-safe writes
-5. **Loader / UI** (`loader.py`, `tui.py`) — safe ZIP/directory artifact loading; 32-column curses TUI with per-agent views
+5. **Loader / UI** (`loader.py`, `tui.py`) — safe ZIP/directory artifact loading; 32-column curses TUI with optional color, per-agent views, run-launch and cancel controls
+6. **Configuration** (`config.py`) — TOML config with 3-layer merge (`~/.config/benchdeck/`, `./benchdeck.toml`, `--config`)
+7. **Budget** (`budget.py`) — 7-dimension budget tracker; preflight warning; mid-run enforcement
+8. **Logging** (`logging_config.py`) — JSON-structured log output with configurable level and file destination
 
 See `docs/architecture.md`, `docs/benchmark-contract.md`, and `docs/mobile-tui.md` for details.
 
@@ -174,15 +206,12 @@ See `docs/architecture.md`, `docs/benchmark-contract.md`, and `docs/mobile-tui.m
 
 ## Limitations
 
-- **No multi-judge aggregation.** Each case is judged once per agent; no ensemble or disagreement reporting yet.
-- **No budget cap.** No token or cost limit guards a run.
-- **No resume support.** Interrupted runs must be restarted from scratch.
-- **No configuration file.** All settings are CLI-only; gateway timeouts, retries, and backoff are not exposed.
-- **No logging infrastructure.** All output goes to `print()` or JSON artifacts; no structured debug logs.
-- **No signed releases or SBOM.** Distribution artifacts have not been published to PyPI.
-- **The TUI cannot launch or cancel runs.** It is read-only; runs are started from the CLI.
-- **No Windows testing.** Developed and tested on Linux.
-- **No color support in TUI.** Monochrome curses — intentional for mobile SSH but limits desktop utility.
+- **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`) and release with SBOM (`release.yml`) exist but have not been triggered (no `v*` tag pushed).
+- **Inspector hardening pending.** `inspect.py` validates schema but not checksums, referential integrity, or counter consistency.
+- **No cross-process run lock.** `storage.py` uses atomic writes (`os.replace`), but concurrent writers to the same output directory could race.
+- **No Windows testing.** Developed and tested on Linux only.
+- **No dependency lock file.** `requirements.txt` provides reproducible pins; no `requirements.lock` or `uv.lock` exists.
+- **`dist/` artifacts stale.** (Built 2026-06-11; source has changed since.) Not committed — `dist/` is gitignored.
 
 See [REMAINING_ISSUES.md](./REMAINING_ISSUES.md) for the full list of known limitations.
 
@@ -190,7 +219,7 @@ See [REMAINING_ISSUES.md](./REMAINING_ISSUES.md) for the full list of known limi
 
 ## Known Issues
 
-The [CHANGELOG](./CHANGELOG.md#known-issues) lists known issues for the current release. For a comprehensive list including resolved bugs, see [REMAINING_ISSUES.md](./REMAINING_ISSUES.md).
+The [CHANGELOG](./CHANGELOG.md#known-issues-resolved-post-v010) lists issues resolved since the v0.1.0 release. For current limitations, see [REMAINING_ISSUES.md](./REMAINING_ISSUES.md).
 
 ---
 
@@ -200,14 +229,14 @@ The [CHANGELOG](./CHANGELOG.md#known-issues) lists known issues for the current 
 ruff check .                              # lint
 ruff format --check .                     # formatting
 mypy src/benchdeck/                       # type checking (strict; requires types-jsonschema in dev deps)
-pytest --cov=src/benchdeck --cov-report=term-missing  # 192 tests (offline — no live API calls)
+pytest --cov=src/benchdeck --cov-report=term-missing  # 349 tests (2 skipped — live API only)
 ```
 
 Or use the Makefile:
 
 ```bash
 make install   # pip install -e '.[dev]'
-make test      # pytest
+make test      # pytest --cov=src/benchdeck --cov-report=term-missing
 make lint      # ruff check .
 make fixture   # benchdeck inspect fixtures/original_run.zip
 ```
