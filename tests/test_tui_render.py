@@ -926,3 +926,77 @@ def test_line_attr_gate_fail_colored() -> None:
         attr = BenchDeckTUI._line_attr("Fail: Gate broken")
     # The rating-Fail branch returns curses.color_pair(1).
     assert attr == 0x100
+
+
+# ── _poll_subprocess (P0-6) ─────────────────────────────────────────────────
+
+
+def test_poll_subprocess_nonzero_reports_log(tmp_path: Path) -> None:
+    """When the subprocess has exited with a non-zero code, the status
+    message includes both the `exit=N` tag and the stderr log file name,
+    and all subprocess tracking state is cleared."""
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    assert tui._proc is not None
+    # Capture the log path the launch recorded (real file on disk).
+    assert tui._stderr_log is not None
+    log_name = tui._stderr_log.name
+    # Override poll() to report a non-zero exit.
+    tui._proc.poll.return_value = 1
+
+    tui._poll_subprocess()
+
+    assert tui._status_msg is not None
+    assert "exit=1" in tui._status_msg
+    assert "log:" in tui._status_msg
+    assert log_name in tui._status_msg
+    # All subprocess tracking state is cleared.
+    assert tui._proc is None
+    assert tui._proc_run_dir is None
+    assert tui._stderr_log is None
+    assert tui._stderr_handle is None
+
+
+def test_poll_subprocess_zero_clears_proc(tmp_path: Path) -> None:
+    """When the subprocess has exited with code 0, the status message
+    contains the `ok` tag and the log file name is NOT mentioned (the
+    footer line is short). All tracking state is cleared."""
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    assert tui._proc is not None
+    # Override poll() to report a clean exit.
+    tui._proc.poll.return_value = 0
+
+    tui._poll_subprocess()
+
+    assert tui._status_msg is not None
+    assert "ok" in tui._status_msg
+    # The log file name is NOT appended on the rc==0 path.
+    assert "log:" not in tui._status_msg
+    # State is cleared.
+    assert tui._proc is None
+    assert tui._proc_run_dir is None
+    assert tui._stderr_log is None
+    assert tui._stderr_handle is None
+
+
+def test_poll_subprocess_noop_when_proc_is_none(tmp_path: Path) -> None:
+    """When no subprocess is running, `_poll_subprocess` is a no-op
+    (no status message change, no exceptions)."""
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    assert tui._proc is None
+    # Set a status message to verify it's not clobbered.
+    tui._status_msg = "prior status"
+
+    tui._poll_subprocess()
+
+    # No-op: status message unchanged.
+    assert tui._status_msg == "prior status"
