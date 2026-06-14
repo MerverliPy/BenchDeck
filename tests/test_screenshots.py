@@ -16,6 +16,17 @@ if str(_here.parents[1]) not in sys.path:
 
 from scripts import generate_demo_screens as gds  # noqa: E402
 
+# ── demo snapshot contract version ───────────────────────────────────────────
+
+# Bump this constant when the synthetic demo's structural content changes
+# (e.g. a new tab line, a new header string, a re-ordered rendering). Phase
+# 3's `test_tui_renders_*_with_demo_snapshot` tests will read this constant
+# to decide whether to re-anchor expected substrings. Initial value (1)
+# reflects the current state of `_build_demo_snapshot` and
+# `_build_dual_agent_demo_snapshot` as captured in the enhancement plan
+# baseline (commit 2749185).
+DEMO_SNAPSHOT_VERSION = 1
+
 # ── theme resolution ────────────────────────────────────────────────────────
 
 

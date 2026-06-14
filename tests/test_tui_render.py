@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from benchdeck.loader import Snapshot
+from benchdeck.manifest import Manifest
 from benchdeck.tui import BenchDeckTUI
 
 
@@ -460,3 +461,596 @@ def test_cancel_timeout_clears_request(tmp_path: Path) -> None:
     tui._cancel_requested_at = tui._cancel_requested_at - 10.0
     tui._handle_key(ord(" "))
     assert tui._cancel_requested_at is None
+
+
+# ── _draw boundary tests (P0-1) ─────────────────────────────────────────────
+
+
+def test_draw_too_small_height(make_fake_stdscr: Any) -> None:
+    """height < 10 emits the single-line 'Terminal too small' message and
+    then returns without further output."""
+    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    stdscr = make_fake_stdscr(9, 80)
+    tui._draw(stdscr)
+    assert len(stdscr.calls) == 1
+    row, col, text, _n, _attr = stdscr.calls[0]
+    assert row == 0
+    assert col == 0
+    assert text.startswith("Terminal too small")
+    assert "(min 32x10)" in text
+    # The early return path must not invoke `refresh` (it does, but no
+    # further `addnstr` is allowed); assert no row 1+ content was drawn.
+    rows_used = {r for (r, _c, _t, _n, _a) in stdscr.calls}
+    assert rows_used == {0}
+
+
+def test_draw_too_small_width(make_fake_stdscr: Any) -> None:
+    """width < 32 emits the same single-line 'Terminal too small' message."""
+    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    stdscr = make_fake_stdscr(24, 31)
+    tui._draw(stdscr)
+    assert len(stdscr.calls) == 1
+    _row, _col, text, _n, _attr = stdscr.calls[0]
+    assert text.startswith("Terminal too small")
+    assert "(min 32x10)" in text
+
+
+def test_draw_short_tab_names_at_width_39(make_fake_stdscr: Any) -> None:
+    """At width=39 the tab row uses the short form `[1:Ov] 2:Ca 3:De 4:He`
+    and does NOT include the long form `Overview` / `Cases`."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(
+            metadata={"status": "running"},
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 39)
+    tui._draw(stdscr)
+    tab_calls = [c for c in stdscr.calls if c[0] == 1]
+    assert len(tab_calls) == 1
+    _r, _c, tab_text, _n, _a = tab_calls[0]
+    assert "[1:Ov]" in tab_text
+    assert "2:Ca" in tab_text
+    assert "3:De" in tab_text
+    assert "4:He" in tab_text
+    # The long form must not appear in the tab row.
+    assert "Overview" not in tab_text
+    assert "Cases" not in tab_text
+    assert "Detail" not in tab_text
+    assert "Help" not in tab_text
+
+
+def test_render_dispatches_all_four_tabs(make_fake_stdscr: Any) -> None:
+    """`_render(width)` returns a non-empty list whose first line is
+    tab-appropriate for every one of the four TABS."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(
+            metadata={"status": "running"},
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                        "test_prompt": "do the thing",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                }
+            ],
+            results={
+                "agent_a": [
+                    {
+                        "case_id": 1,
+                        "final_output": "Done.",
+                    }
+                ]
+            },
+        ),
+    )
+    expected_first_line: dict[int, str] = {
+        0: "Run:",
+        1: "Cases",
+        2: "Case 1:",
+        3: "Mobile SSH controls",
+    }
+    for tab_idx, expected_prefix in expected_first_line.items():
+        tui.tab = tab_idx
+        tui.selected = 0
+        tui.scroll = 0
+        lines = tui._render(80)
+        assert lines, f"tab {tab_idx} produced no lines"
+        assert lines[0].startswith(expected_prefix), (
+            f"tab {tab_idx}: expected first line to start with {expected_prefix!r},"
+            f" got {lines[0]!r}"
+        )
+
+
+# ── multi-judge disagreement in _detail (P0-2) ──────────────────────────────
+
+
+def test_detail_shows_judge_disagreement_when_ratings_diverge() -> None:
+    """When 3 judgments on the same case have 3 distinct ratings, the
+    detail view emits the 'Judge disagreement detected:' block with
+    one line per rating (sorted) showing the per-rating count."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Diverging case",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                    "why": "good",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_b",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_c",
+                    "overall_rating": "Weak",
+                    "why": "lacking",
+                    "gate_check": {"status": "Fail", "reason": "no"},
+                },
+            ],
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    assert "Judge disagreement detected:" in text
+    # Per-rating counts, sorted alphabetically: Excellent, Strong, Weak.
+    assert "  Excellent: 1 judge(s)" in text
+    assert "  Strong: 1 judge(s)" in text
+    assert "  Weak: 1 judge(s)" in text
+    # The disagreement block is preceded by a blank line and is the last
+    # block before any infrastructure-error section (none in this snapshot).
+    assert text.rstrip().endswith("  Weak: 1 judge(s)")
+
+
+def test_detail_no_disagreement_block_when_ratings_agree() -> None:
+    """When 2+ judgments on the same case all share one rating, the
+    'Judge disagreement detected:' block is NOT emitted."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Agreeing case",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_b",
+                    "overall_rating": "Strong",
+                    "why": "agree",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+            ],
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    assert "Judge disagreement detected:" not in text
+    # Sanity: the per-judgment sections are still present.
+    assert "Agent: agent_a" in text
+    assert "Agent: agent_b" in text
+    # The `_section` helper puts the title on one line and the value on the
+    # next, so "Strong" appears as a standalone line per judgment (>= 2).
+    assert text.count("\nStrong\n") >= 2
+
+
+def test_detail_disagreement_counts_duplicate_ratings() -> None:
+    """When ratings include duplicates (e.g. 4 judges, ratings split 2-1-1),
+    the per-rating count reflects the duplicate."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Split case",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_b",
+                    "overall_rating": "Excellent",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_c",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_d",
+                    "overall_rating": "Weak",
+                    "why": "ok",
+                    "gate_check": {"status": "Fail", "reason": "no"},
+                },
+            ],
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    assert "Judge disagreement detected:" in text
+    # Sorted: Excellent, Strong, Weak with counts 2, 1, 1.
+    assert "  Excellent: 2 judge(s)" in text
+    assert "  Strong: 1 judge(s)" in text
+    assert "  Weak: 1 judge(s)" in text
+
+
+# ── manifest integrity in _overview (P0-3) ──────────────────────────────────
+
+
+def test_overview_manifest_warning_when_verify_fails(tmp_path: Path) -> None:
+    """When the on-disk manifest declares a file that has since been
+    tampered with, `_overview` emits a `Manifest gen N: WARNING — N
+    integrity issue(s)` line and does NOT show `valid`."""
+    # Record a real entry so the manifest is well-formed and the file
+    # exists; then tamper with the file's contents so the recorded sha
+    # no longer matches the bytes on disk.
+    Manifest(tmp_path).record("artifact.json", "original content")
+    (tmp_path / "artifact.json").write_text("tampered content", encoding="utf-8")
+    tui = _make_tui(
+        run_dir=tmp_path,
+        snapshot=Snapshot(metadata={}),
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "Manifest gen 1: WARNING" in text
+    assert "1 integrity issue" in text
+    # The TUI shows only the count, not the underlying verify() details.
+    assert "Manifest gen 1: valid" not in text
+    # Sanity: the regular overview content is also emitted.
+    assert "Progress" in text
+    assert "Policy blocks" in text
+
+
+def test_overview_manifest_not_present_when_gen_zero(tmp_path: Path) -> None:
+    """When the run_dir has no manifest.json, `_overview` emits the
+    `Manifest: not yet present` line and does NOT show `WARNING`."""
+    # tmp_path exists but has no manifest.json.
+    assert not (tmp_path / "manifest.json").exists()
+    tui = _make_tui(
+        run_dir=tmp_path,
+        snapshot=Snapshot(metadata={}),
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "Manifest: not yet present" in text
+    assert "WARNING" not in text
+    assert "Manifest gen" not in text
+
+
+# ── scroll indicators in _draw (P0-4) ──────────────────────────────────────
+
+
+_INDICATOR_TEXTS = (" ↑", " ↓")
+
+
+def _indicator_calls(stdscr: Any) -> list[tuple[int, int, str, int, int]]:
+    """Return the recorded `addnstr` calls whose text starts with ` ↑` or ` ↓`."""
+    return [c for c in stdscr.calls if c[2].startswith(_INDICATOR_TEXTS)]
+
+
+def test_draw_scroll_indicator_at_top(make_fake_stdscr: Any) -> None:
+    """At scroll=0 (top), only the down-arrow indicator is emitted; the
+    up-arrow is suppressed because there is no content above the viewport."""
+    tui = _make_tui(
+        tab=1,  # Cases tab
+        scroll=0,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
+                ]
+            },
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # Sanity: clamp kept us at the top.
+    assert tui.scroll == 0
+    indicators = _indicator_calls(stdscr)
+    assert len(indicators) == 1
+    row, col, text, _n, _a = indicators[0]
+    # The down-arrow is shown at the bottom of the viewport.
+    assert text.startswith(" ↓")
+    assert col == 80 - 2
+    # view_height = 24 - 4 = 20, so the indicator is at row 2 + 20 - 1 = 21.
+    assert row == 2 + (24 - 4) - 1
+
+
+def test_draw_scroll_indicator_at_bottom(make_fake_stdscr: Any) -> None:
+    """At scroll=max_scroll (bottom), only the up-arrow indicator is
+    emitted; the down-arrow is suppressed because there is no content
+    below the viewport."""
+    tui = _make_tui(
+        tab=1,  # Cases tab
+        # Setting selected=49 forces `_clamp_scroll` to push the scroll
+        # to the maximum position (49 - 20 + 2 = 31 = max_scroll).
+        selected=49,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
+                ]
+            },
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # Sanity: clamp pushed scroll to max_scroll = 51 - 20 = 31.
+    assert tui.scroll == 51 - 20
+    indicators = _indicator_calls(stdscr)
+    assert len(indicators) == 1
+    row, col, text, _n, _a = indicators[0]
+    # The up-arrow is shown at the top of the viewport (row 2).
+    assert text.startswith(" ↑")
+    assert col == 80 - 2
+    assert row == 2
+
+
+def test_draw_no_indicator_when_fits(make_fake_stdscr: Any) -> None:
+    """When the rendered content fits inside the viewport, neither
+    scroll indicator is emitted."""
+    tui = _make_tui(
+        tab=1,  # Cases tab
+        snapshot=Snapshot(
+            plan={"cases": [{"id": 1, "title": "Only case"}]},
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # `_case_list` produces 2 lines (header + 1 case); view_height=20, so
+    # the content fits and no scroll is needed.
+    indicators = _indicator_calls(stdscr)
+    assert indicators == []
+
+
+# ── _line_attr colorization (P0-5) ─────────────────────────────────────────
+
+
+def test_line_attr_quoted_rating_not_colored() -> None:
+    """A rating token in double-quotes is NOT colored (current behavior).
+
+    This is a regression guard for the boundary check in `_line_attr`.
+    The double-quote character is not in the boundary set
+    ``(" ", "[", ":", "]", ",", "(")``, so the rating substring is
+    treated as a non-word match and the function returns 0. The
+    exemption is *incidental*, not intentional: it would silently break
+    if the boundary set were ever extended to include ``"``.
+
+    The plan named this test ``test_line_attr_quoted_rating_still_colored``;
+    the actual current behavior is "not colored", so the test name and
+    assertion are aligned with the function, not the plan's wording.
+    """
+    attr = BenchDeckTUI._line_attr('Judge said "Excellent" in the report')
+    assert attr == 0
+
+
+def test_line_attr_gate_pass_colored() -> None:
+    """A line containing both 'Pass' and 'Gate' is colored (green pair)."""
+    # Patch `curses.color_pair` to return a deterministic per-pair value
+    # so we can both confirm the gate branch was hit and that the
+    # resulting attribute is non-zero (i.e., the line is colored).
+    def _fake_color_pair(n: int) -> int:
+        return 0x100 * n
+
+    with patch("benchdeck.tui.curses.color_pair", side_effect=_fake_color_pair):
+        attr = BenchDeckTUI._line_attr("Pass: Gate ok")
+    # The Gate-Pass branch returns curses.color_pair(2).
+    assert attr == 0x200
+
+
+def test_line_attr_gate_fail_colored() -> None:
+    """A line containing both 'Fail' and 'Gate' is colored (red pair).
+
+    Note: this particular line is matched by the *rating* check
+    ('Fail' with whole-word boundary) first, not the gate check. The
+    rating-Fail branch and the gate-Fail branch both return the same
+    red pair, so the test asserts only that the result is colored and
+    matches pair 1.
+    """
+
+    def _fake_color_pair(n: int) -> int:
+        return 0x100 * n
+
+    with patch("benchdeck.tui.curses.color_pair", side_effect=_fake_color_pair):
+        attr = BenchDeckTUI._line_attr("Fail: Gate broken")
+    # The rating-Fail branch returns curses.color_pair(1).
+    assert attr == 0x100
+
+
+# ── _poll_subprocess (P0-6) ─────────────────────────────────────────────────
+
+
+def test_poll_subprocess_nonzero_reports_log(tmp_path: Path) -> None:
+    """When the subprocess has exited with a non-zero code, the status
+    message includes both the `exit=N` tag and the stderr log file name,
+    and all subprocess tracking state is cleared."""
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    assert tui._proc is not None
+    # Capture the log path the launch recorded (real file on disk).
+    assert tui._stderr_log is not None
+    log_name = tui._stderr_log.name
+    # Override poll() to report a non-zero exit.
+    tui._proc.poll.return_value = 1
+
+    tui._poll_subprocess()
+
+    assert tui._status_msg is not None
+    assert "exit=1" in tui._status_msg
+    assert "log:" in tui._status_msg
+    assert log_name in tui._status_msg
+    # All subprocess tracking state is cleared.
+    assert tui._proc is None
+    assert tui._proc_run_dir is None
+    assert tui._stderr_log is None
+    assert tui._stderr_handle is None
+
+
+def test_poll_subprocess_zero_clears_proc(tmp_path: Path) -> None:
+    """When the subprocess has exited with code 0, the status message
+    contains the `ok` tag and the log file name is NOT mentioned (the
+    footer line is short). All tracking state is cleared."""
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    assert tui._proc is not None
+    # Override poll() to report a clean exit.
+    tui._proc.poll.return_value = 0
+
+    tui._poll_subprocess()
+
+    assert tui._status_msg is not None
+    assert "ok" in tui._status_msg
+    # The log file name is NOT appended on the rc==0 path.
+    assert "log:" not in tui._status_msg
+    # State is cleared.
+    assert tui._proc is None
+    assert tui._proc_run_dir is None
+    assert tui._stderr_log is None
+    assert tui._stderr_handle is None
+
+
+def test_poll_subprocess_noop_when_proc_is_none(tmp_path: Path) -> None:
+    """When no subprocess is running, `_poll_subprocess` is a no-op
+    (no status message change, no exceptions)."""
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    assert tui._proc is None
+    # Set a status message to verify it's not clobbered.
+    tui._status_msg = "prior status"
+
+    tui._poll_subprocess()
+
+    # No-op: status message unchanged.
+    assert tui._status_msg == "prior status"
+
+
+# ── _launch_run with agent_b (P0-7) ─────────────────────────────────────────
+
+
+def test_launch_run_includes_agent_b_when_present(tmp_path: Path) -> None:
+    """When both `_agent_a_path` and `_agent_b_path` are set and both
+    files exist, the launched command list includes `--agent-b` followed
+    by the agent_b path (in addition to `--agent-a`)."""
+    agent_a = tmp_path / "agent_a.md"
+    agent_a.write_text("# Agent A")
+    agent_b = tmp_path / "agent_b.md"
+    agent_b.write_text("# Agent B")
+    tui = BenchDeckTUI(
+        tmp_path,
+        agent_a_path=agent_a,
+        agent_b_path=agent_b,
+        model="gpt-4o",
+    )
+    with _mock_popen() as mock_popen:
+        tui._launch_run()
+    # Sanity: the subprocess was spawned.
+    assert tui._proc is not None
+    # The mock was called with the command list as the first positional arg.
+    assert mock_popen.called
+    cmd = mock_popen.call_args[0][0]
+    # The single-agent flags must be present (regression guard for the
+    # existing path).
+    assert "--agent-a" in cmd
+    assert str(agent_a) in cmd
+    # The two-agent flag must be appended because both files exist.
+    assert "--agent-b" in cmd
+    idx = cmd.index("--agent-b")
+    assert cmd[idx + 1] == str(agent_b)
+
+
+def test_launch_run_omits_agent_b_when_file_missing(tmp_path: Path) -> None:
+    """When `_agent_b_path` is set but the file does NOT exist, the
+    launched command does NOT include `--agent-b` (the guard in
+    `_launch_run` skips the flag if the file is missing)."""
+    agent_a = tmp_path / "agent_a.md"
+    agent_a.write_text("# Agent A")
+    agent_b = tmp_path / "agent_b.md"  # file is NOT created
+    tui = BenchDeckTUI(
+        tmp_path,
+        agent_a_path=agent_a,
+        agent_b_path=agent_b,
+        model="gpt-4o",
+    )
+    with _mock_popen() as mock_popen:
+        tui._launch_run()
+    assert tui._proc is not None
+    cmd = mock_popen.call_args[0][0]
+    assert "--agent-b" not in cmd
