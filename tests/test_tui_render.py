@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from benchdeck.loader import Snapshot
+from benchdeck.manifest import Manifest
 from benchdeck.tui import BenchDeckTUI
 
 
@@ -741,3 +742,46 @@ def test_detail_disagreement_counts_duplicate_ratings() -> None:
     assert "  Excellent: 2 judge(s)" in text
     assert "  Strong: 1 judge(s)" in text
     assert "  Weak: 1 judge(s)" in text
+
+
+# ── manifest integrity in _overview (P0-3) ──────────────────────────────────
+
+
+def test_overview_manifest_warning_when_verify_fails(tmp_path: Path) -> None:
+    """When the on-disk manifest declares a file that has since been
+    tampered with, `_overview` emits a `Manifest gen N: WARNING — N
+    integrity issue(s)` line and does NOT show `valid`."""
+    # Record a real entry so the manifest is well-formed and the file
+    # exists; then tamper with the file's contents so the recorded sha
+    # no longer matches the bytes on disk.
+    Manifest(tmp_path).record("artifact.json", "original content")
+    (tmp_path / "artifact.json").write_text("tampered content", encoding="utf-8")
+    tui = _make_tui(
+        run_dir=tmp_path,
+        snapshot=Snapshot(metadata={}),
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "Manifest gen 1: WARNING" in text
+    assert "1 integrity issue" in text
+    # The TUI shows only the count, not the underlying verify() details.
+    assert "Manifest gen 1: valid" not in text
+    # Sanity: the regular overview content is also emitted.
+    assert "Progress" in text
+    assert "Policy blocks" in text
+
+
+def test_overview_manifest_not_present_when_gen_zero(tmp_path: Path) -> None:
+    """When the run_dir has no manifest.json, `_overview` emits the
+    `Manifest: not yet present` line and does NOT show `WARNING`."""
+    # tmp_path exists but has no manifest.json.
+    assert not (tmp_path / "manifest.json").exists()
+    tui = _make_tui(
+        run_dir=tmp_path,
+        snapshot=Snapshot(metadata={}),
+    )
+    lines = tui._overview(80)
+    text = "\n".join(lines)
+    assert "Manifest: not yet present" in text
+    assert "WARNING" not in text
+    assert "Manifest gen" not in text
