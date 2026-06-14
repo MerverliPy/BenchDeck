@@ -127,9 +127,20 @@ def main() -> int:
     if plan:
         command += ["--plan", f"/workspace/{plan}"]
 
+    # Read the key on the host and pass it as a docker env var. The
+    # original design mounted the key file at /run/secrets/openai_api_key
+    # inside the live container, but WSL2 9P bind mounts do not always
+    # preserve the source file's mode bits, so the inner
+    # `cat /run/secrets/openai_api_key` fails with EACCES even when
+    # the source is readable by the container's run-as user. Passing
+    # the key directly avoids the mount-mode issue; the key will be
+    # visible to `docker inspect` for the lifetime of the live
+    # container (a few minutes at most) and the key is a dedicated
+    # test key with a USD 5 hard spend cap.
+    openai_key = secret.read_text(encoding="utf-8").strip()
+
     shell_command = (
         'export PATH="/state/venv/bin:$PATH"; '
-        'export OPENAI_API_KEY="$(cat /run/secrets/openai_api_key)"; '
         "exec " + " ".join(shlex.quote(item) for item in command)
     )
     started = dt.datetime.now(dt.UTC)
