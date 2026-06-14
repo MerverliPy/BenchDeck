@@ -6,6 +6,8 @@ ZIP validation, and fixture integrity.
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import zipfile
 from pathlib import Path
@@ -470,3 +472,52 @@ def test_tui_overview_no_planner_line_when_empty() -> None:
     lines = tui._overview(80)
     text = "\n".join(lines)
     assert "Planner:" not in text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Segmented .b64.* ZIP loading (P0-8)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_load_snapshot_reads_segmented_b64_zip(tmp_path: Path) -> None:
+    """When the ``.zip`` file does not exist but its ``.b64.*`` segments
+    do, ``load_snapshot`` decodes the concatenated base64 segments and
+    reads the resulting ZIP as a normal archive.
+
+    This is the in-repo "checked-in fixture" path used by the TUI when
+    a run is exported as a multi-segment base64 bundle (e.g. for size
+    limits on hosted services). The ``.b64.N`` segments are joined in
+    lexicographic order, base64-decoded as one blob, then unpacked by
+    ``_load_zip_bytes``.
+    """
+    # Build a real ZIP in memory with the expected JSON members.
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as archive:
+        archive.writestr(
+            "run_metadata.json",
+            json.dumps({"status": "running", "cases_in_plan": 1}),
+        )
+        archive.writestr(
+            "benchmark_plan.json",
+            json.dumps({"cases": [{"id": 1, "title": "Segmented"}]}),
+        )
+    zip_bytes = zip_buffer.getvalue()
+    # Encode and split into two ASCII segments at the midpoint.
+    encoded = base64.b64encode(zip_bytes).decode("ascii")
+    midpoint = len(encoded) // 2
+    segment_0 = encoded[:midpoint]
+    segment_1 = encoded[midpoint:]
+    assert segment_0 and segment_1  # sanity: both halves are non-empty
+    # Write the segments; the .zip file is intentionally NOT created.
+    zip_path = tmp_path / "foo.zip"
+    assert not zip_path.exists()
+    (tmp_path / "foo.zip.b64.0").write_text(segment_0, encoding="ascii")
+    (tmp_path / "foo.zip.b64.1").write_text(segment_1, encoding="ascii")
+    # Sanity: the segments are joined back to the same bytes.
+    assert base64.b64decode(segment_0 + segment_1) == zip_bytes
+    # Call load_snapshot on the .zip path (which doesn't exist as a file).
+    snapshot = load_snapshot(zip_path)
+    # The snapshot's metadata and plan came from the decoded ZIP.
+    assert snapshot.metadata.get("status") == "running"
+    assert snapshot.metadata.get("cases_in_plan") == 1
+    assert snapshot.plan.get("cases") == [{"id": 1, "title": "Segmented"}]
