@@ -1147,3 +1147,75 @@ def test_footer_hint_truncates_at_narrow_width(make_fake_stdscr: Any) -> None:
     assert len(text) <= 40
     # The contextual map is NOT applied at narrow widths.
     assert " | " not in text
+
+
+# ── Cases tab header summary (P1-3) ─────────────────────────────────────────
+
+
+def test_case_list_header_includes_counts(make_fake_stdscr: Any) -> None:
+    """At width=80, the Cases tab header (row 2) is a one-line summary
+    that includes the total / judged / blocked counts."""
+    tui = _make_tui(
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Case 1"},
+                    {"id": 2, "title": "Case 2"},
+                    {"id": 3, "title": "Case 3"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                },
+            ],
+            policy_blocks=[{"case_id": 2, "message": "policy"}],
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # The first content row (row 2) is the header.
+    header_calls = [c for c in stdscr.calls if c[0] == 2]
+    assert len(header_calls) == 1
+    _r, _c, text, _n, _a = header_calls[0]
+    assert "Cases:" in text
+    assert "3 total" in text
+    assert "1 judged" in text
+    assert "1 blocked" in text
+
+
+def test_case_list_header_truncates_at_minimum_width(make_fake_stdscr: Any) -> None:
+    """At width=32 (the hard minimum), the Cases header fits within
+    the available columns (the full format is truncated to width chars)."""
+    tui = _make_tui(
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Case 1"},
+                    {"id": 2, "title": "Case 2"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                },
+            ],
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 32)
+    tui._draw(stdscr)
+    header_calls = [c for c in stdscr.calls if c[0] == 2]
+    assert len(header_calls) == 1
+    _r, _c, text, _n, _a = header_calls[0]
+    # The header fits in the available columns.
+    assert len(text) <= 32
+    # The leading text is preserved.
+    assert text.startswith("Cases")

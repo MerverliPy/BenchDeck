@@ -263,14 +263,28 @@ class BenchDeckTUI:
         return lines
 
     def _case_list(self, width: int) -> list[str]:
-        lines = ["Cases"]
+        cases = self._cases()
         judgments_by_case: dict[int, list[dict[str, Any]]] = {}
         for j in self.snapshot.judgments:
             cid = j.get("case_id")
             if cid is not None:
                 judgments_by_case.setdefault(cid, []).append(j)
         blocks = {b.get("case_id"): b for b in self.snapshot.policy_blocks}
-        for index, case in enumerate(self._cases()):
+        # Header counts: total, judged, blocked. Computed against the set
+        # of case IDs that are actual integers (matches the row-render
+        # filter below so a malformed plan does not skew the counts).
+        case_ids = {c.get("id") for c in cases if isinstance(c.get("id"), int)}
+        total = len(case_ids)
+        judged = sum(1 for cid in case_ids if cid in judgments_by_case)
+        blocked = sum(1 for cid in case_ids if cid in blocks)
+        header = f"Cases: {total} total · {judged} judged · {blocked} blocked"
+        if len(header) > width:
+            # Truncate to width chars; the curses display will further
+            # clip to width-1 visible cells. The header still begins
+            # with "Cases: N total …" so the meaning is preserved.
+            header = header[:width]
+        lines = [header]
+        for index, case in enumerate(cases):
             case_id = case.get("id")
             if not isinstance(case_id, int):
                 continue
