@@ -166,7 +166,7 @@ def main() -> int:
                 "-v", f"{state['workspace']}:/workspace:ro",
                 "-v", f"{state['state_dir']}:/state:ro",
                 "-v", f"{output_host}:/evidence:rw",
-                "-v", f"{secret}:/run/secrets/openai_api_key:ro",
+                "-e", f"OPENAI_API_KEY={openai_key}",
                 "-w", "/workspace",
                 state["image"],
                 "bash", "-lc", shell_command,
