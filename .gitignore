@@ -17,3 +17,5 @@ my_agent.md
 # BenchDeck product-test generated state
 .test-evidence/
 .product-test/runtime/
+# Session output logs (not artifacts)
+logs/
