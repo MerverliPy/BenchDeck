@@ -16,10 +16,16 @@ def load_config(explicit_path: str | None = None) -> dict[str, Any]:
     Returns empty dict if no config file found.
     """
     merged: dict[str, Any] = {}
-    search_paths = [
-        Path.home() / ".config" / "benchdeck" / "config.toml",
-        Path("benchdeck.toml"),
-    ]
+    search_paths: list[Path] = []
+    try:
+        search_paths.append(Path.home() / ".config" / "benchdeck" / "config.toml")
+    except RuntimeError:
+        # HOME unset and pwd lookup failed (e.g. running as an unmapped UID
+        # inside a container, or under patch.dict(os.environ, {}, clear=True)
+        # in tests). Skip the home-dir candidate rather than crash; the
+        # local /workspace/benchdeck.toml and any --config still apply.
+        pass
+    search_paths.append(Path("benchdeck.toml"))
     if explicit_path:
         search_paths.append(Path(explicit_path))
 
