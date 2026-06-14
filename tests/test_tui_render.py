@@ -6,6 +6,7 @@ No terminal required.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -1054,3 +1055,389 @@ def test_launch_run_omits_agent_b_when_file_missing(tmp_path: Path) -> None:
     assert tui._proc is not None
     cmd = mock_popen.call_args[0][0]
     assert "--agent-b" not in cmd
+
+
+# ── footer hint width-based selection (P1-6) ───────────────────────────────
+
+
+def test_footer_hint_short_form_at_narrow_width(make_fake_stdscr: Any) -> None:
+    """At width < 56, the footer (row height-1) uses the short hint
+    `1-4 tabs · j/k move · q quit` so it fits within the 32-56 column
+    band. The full-form tokens must NOT appear."""
+    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    stdscr = make_fake_stdscr(24, 40)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    assert "1-4 tabs" in text
+    assert "j/k move" in text
+    assert "q quit" in text
+    # Full-form tokens must be absent.
+    assert "Enter detail" not in text
+    assert "e export" not in text
+    assert "h/l tabs" not in text
+
+
+def test_footer_hint_full_form_at_wide_width(make_fake_stdscr: Any) -> None:
+    """At width >= 56 with tab=0 (Overview), the footer uses the
+    per-tab hint map joined with ' | '. This is the wide-form contract
+    that P1-1 introduced; the pre-P1-1 two-space-separated full list
+    has been replaced."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    # The Overview tab's contextual hint tokens.
+    assert "h/l tabs" in text
+    assert "j/k move" in text
+    assert "n run" in text
+    assert "r reload" in text
+    assert "q quit" in text
+    # The P1-1 joiner is in effect.
+    assert " | " in text
+    # Tokens that belong to other tabs (Cases / Detail) must not leak in.
+    assert "Enter open" not in text
+    assert "e export" not in text
+    assert "j/k scroll" not in text
+
+
+# ── contextual footer hint per tab (P1-1) ───────────────────────────────────
+
+
+def test_footer_hint_context_for_cases_tab(make_fake_stdscr: Any) -> None:
+    """At width=80 with tab=1 (Cases), the footer leads with
+    `Enter open · e export` (the most salient keys for the Cases tab)
+    rather than the Overview-default `h/l tabs · j/k move · n run`."""
+    tui = _make_tui(
+        tab=1,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    # Cases-specific keys must be present.
+    assert "Enter open" in text
+    assert "e export" in text
+    # The Cases hint uses the contextual map, not the default
+    # two-space-separated string from P1-6.
+    assert " | " in text
+
+
+def test_footer_hint_truncates_at_narrow_width(make_fake_stdscr: Any) -> None:
+    """At narrow widths (width < 56), the short-form hint is used and
+    the recorded footer line is at most `width` characters long."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
+    stdscr = make_fake_stdscr(24, 40)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    # At width < 56 the P1-6 short form is used (28 chars), so the
+    # recorded (untruncated) text is bounded by `width`.
+    assert len(text) <= 40
+    # The contextual map is NOT applied at narrow widths.
+    assert " | " not in text
+
+
+# ── Cases tab header summary (P1-3) ─────────────────────────────────────────
+
+
+def test_case_list_header_includes_counts(make_fake_stdscr: Any) -> None:
+    """At width=80, the Cases tab header (row 2) is a one-line summary
+    that includes the total / judged / blocked counts."""
+    tui = _make_tui(
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Case 1"},
+                    {"id": 2, "title": "Case 2"},
+                    {"id": 3, "title": "Case 3"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                },
+            ],
+            policy_blocks=[{"case_id": 2, "message": "policy"}],
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # The first content row (row 2) is the header.
+    header_calls = [c for c in stdscr.calls if c[0] == 2]
+    assert len(header_calls) == 1
+    _r, _c, text, _n, _a = header_calls[0]
+    assert "Cases:" in text
+    assert "3 total" in text
+    assert "1 judged" in text
+    assert "1 blocked" in text
+
+
+def test_case_list_header_truncates_at_minimum_width(make_fake_stdscr: Any) -> None:
+    """At width=32 (the hard minimum), the Cases header fits within
+    the available columns (the full format is truncated to width chars)."""
+    tui = _make_tui(
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Case 1"},
+                    {"id": 2, "title": "Case 2"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                },
+            ],
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 32)
+    tui._draw(stdscr)
+    header_calls = [c for c in stdscr.calls if c[0] == 2]
+    assert len(header_calls) == 1
+    _r, _c, text, _n, _a = header_calls[0]
+    # The header fits in the available columns.
+    assert len(text) <= 32
+    # The leading text is preserved.
+    assert text.startswith("Cases")
+
+
+# ── status marks in _case_list (P1-5) ───────────────────────────────────────
+
+
+def test_case_list_includes_status_marks_for_ratings() -> None:
+    """Each case-list row with a rating carries the worst-case status
+    mark before the state segment:
+        Excellent/Strong → [✓]
+        Acceptable/Weak  → [!]
+        Fail             → [X]"""
+    tui = _make_tui(
+        tab=1,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Excellent case"},
+                    {"id": 2, "title": "Acceptable case"},
+                    {"id": 3, "title": "Failing case"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                },
+                {
+                    "case_id": 2,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Acceptable",
+                },
+                {
+                    "case_id": 3,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Fail",
+                },
+            ],
+        ),
+    )
+    lines = tui._case_list(80)
+    text = "\n".join(lines)
+    # All three mark glyphs are present.
+    assert "[✓]" in text
+    assert "[!]" in text
+    assert "[X]" in text
+    # The underlying rating words are still present (marks are added,
+    # not replacements).
+    assert "Excellent" in text
+    assert "Acceptable" in text
+    assert "Fail" in text
+    # Each mark precedes its rating on the same row.
+    excellent_line = next(line for line in lines if "Excellent" in line)
+    assert excellent_line.index("[✓]") < excellent_line.index("Excellent")
+    fail_line = next(line for line in lines if "Fail" in line)
+    assert fail_line.index("[X]") < fail_line.index("Fail")
+
+
+def test_case_list_includes_status_marks_for_blocked() -> None:
+    """A case with a policy block is prefixed with [X] before the
+    BLOCKED state segment on the same row."""
+    tui = _make_tui(
+        tab=1,
+        snapshot=Snapshot(
+            plan={"cases": [{"id": 1, "title": "Blocked case"}]},
+            policy_blocks=[{"case_id": 1, "message": "policy"}],
+        ),
+    )
+    lines = tui._case_list(80)
+    text = "\n".join(lines)
+    assert "[X]" in text
+    assert "BLOCKED" in text
+    # The mark is on the same line as BLOCKED and precedes it.
+    blocked_line = next(line for line in lines if "BLOCKED" in line)
+    assert "[X]" in blocked_line
+    assert blocked_line.index("[X]") < blocked_line.index("BLOCKED")
+
+
+# ── title age suffix (P1-2) ─────────────────────────────────────────────────
+
+
+def test_draw_title_shows_last_loaded_age(make_fake_stdscr: Any) -> None:
+    """At width >= 48 with `self.last_load > 0`, the title row
+    includes a `· Ns ago` suffix showing the seconds since the
+    last snapshot load."""
+    # Set last_load to a fixed value 10s in the past to avoid timing
+    # flakiness; the test computes the expected elapsed dynamically
+    # so the assertion is robust to small jitter.
+    tui = _make_tui(
+        snapshot=Snapshot(metadata={"status": "running"}),
+        last_load=time.monotonic() - 10,
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    title_calls = [c for c in stdscr.calls if c[0] == 0]
+    assert len(title_calls) == 1
+    _r, _c, text, _n, _a = title_calls[0]
+    expected_elapsed = int(time.monotonic() - tui.last_load)
+    expected_suffix = f" · {expected_elapsed}s ago"
+    assert text.endswith(expected_suffix)
+    # The age segment is preceded by the title text.
+    assert "BENCHDECK" in text
+
+
+def test_draw_title_omits_age_when_narrow(make_fake_stdscr: Any) -> None:
+    """At width < 48, the title does NOT include the age suffix,
+    preserving the full 32-47 column band for the title text."""
+    tui = _make_tui(
+        snapshot=Snapshot(metadata={"status": "running"}),
+        last_load=time.monotonic() - 10,
+    )
+    stdscr = make_fake_stdscr(24, 40)
+    tui._draw(stdscr)
+    title_calls = [c for c in stdscr.calls if c[0] == 0]
+    assert len(title_calls) == 1
+    _r, _c, text, _n, _a = title_calls[0]
+    # The age suffix must not appear at narrow widths.
+    assert "s ago" not in text
+    assert "·" not in text
+    # The base title is preserved.
+    assert "BENCHDECK" in text
+    assert "running" in text
+
+
+def test_draw_title_omits_age_before_first_load(make_fake_stdscr: Any) -> None:
+    """Before the first `load_snapshot` call, `self.last_load` is 0
+    and the age suffix is NOT shown (avoids showing '-1s ago' on the
+    very first draw)."""
+    tui = _make_tui(
+        snapshot=Snapshot(metadata={"status": "running"}),
+        last_load=0.0,  # default value before any load
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    title_calls = [c for c in stdscr.calls if c[0] == 0]
+    assert len(title_calls) == 1
+    _r, _c, text, _n, _a = title_calls[0]
+    assert "s ago" not in text
+
+
+# ── block markers in _detail (P1-4) ──────────────────────────────────────────
+
+
+def test_detail_marks_test_prompt_block() -> None:
+    """The Test Prompt section in `_detail` has its wrapped lines
+    prefixed with the `│ ` glyph (Unicode box-drawing light vertical
+    + space). The title line `Test Prompt` is NOT prefixed."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                        "test_prompt": "Do the first thing.\nThen verify the second.",
+                    }
+                ]
+            },
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    # The Test Prompt section title is present (un-prefixed).
+    assert "Test Prompt" in text
+    # The block marker is present on the wrapped body lines.
+    assert "│ " in text
+    # The first body line is a wrapped-prefixed version of the prompt.
+    assert "│ Do the first thing." in text
+
+
+def test_detail_marks_agent_output_block() -> None:
+    """The Agent output section in `_detail` has its wrapped lines
+    prefixed with the `│ ` glyph. The title line `Agent output` is
+    NOT prefixed."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                        "test_prompt": "Do the thing.",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                }
+            ],
+            results={
+                "agent_a": [
+                    {
+                        "case_id": 1,
+                        "final_output": "Done.\nNext step here.",
+                    }
+                ]
+            },
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    # The Agent output title is present.
+    assert "Agent output" in text
+    # The block marker is present on the wrapped body lines.
+    assert "│ " in text
+    # At least one wrapped line is prefixed.
+    assert "│ Done." in text
+    # The title line itself is NOT prefixed.
+    title_line = next(line for line in lines if line == "Agent output")
+    assert "│ " not in title_line

@@ -18,6 +18,17 @@ class BenchDeckTUI:
 
     TABS = ("Overview", "Cases", "Detail", "Help")
 
+    # Per-tab contextual footer hints. The first entry is the most
+    # salient for the tab; later entries fill in secondary keys. The
+    # render function joins with " | " at width >= 56, or falls back to
+    # the short form ("1-4 tabs · j/k move · q quit") at width < 56.
+    FOOTER_HINTS: dict[int, list[str]] = {
+        0: ["h/l tabs", "j/k move", "n run", "r reload", "q quit"],
+        1: ["Enter open", "e export", "j/k move", "h/l tabs", "q quit"],
+        2: ["j/k scroll", "h/l tabs", "r reload", "q quit"],
+        3: ["h/l tabs", "q quit"],
+    }
+
     def __init__(
         self,
         run_dir: Path,
@@ -117,6 +128,14 @@ class BenchDeckTUI:
         title = " BENCHDECK "
         proc_info = f" PID:{self._proc.pid}" if self._proc else ""
         status = str(self.snapshot.metadata.get("status", "no run"))
+        # Title age suffix: only at width >= 48 to preserve the 32-47
+        # column band for the title text. The age is recomputed on
+        # every draw (so it advances as time passes) but the suffix is
+        # not shown before the first `load_snapshot` call (last_load=0).
+        title_str = title + f"[{status}]{proc_info}"
+        if self.last_load > 0 and width >= 48:
+            elapsed = int(time.monotonic() - self.last_load)
+            title_str += f" · {elapsed}s ago"
         title_attr = curses.A_REVERSE
         tab_attr: int = curses.A_BOLD
         footer_attr: int = curses.A_REVERSE
@@ -125,7 +144,7 @@ class BenchDeckTUI:
             title_attr = curses.color_pair(6) | curses.A_BOLD
             tab_attr = curses.color_pair(5) | curses.A_BOLD
             footer_attr = curses.color_pair(6) | curses.A_BOLD
-        self._safe_add(stdscr, 0, 0, title + f"[{status}]{proc_info}", width, title_attr)
+        self._safe_add(stdscr, 0, 0, title_str, width, title_attr)
         tab_names = ("Ov", "Ca", "De", "He") if width < 40 else self.TABS
         tab_line = " ".join(
             f"{i + 1}:{tab_names[i]}" if i != self.tab else f"[{i + 1}:{tab_names[i]}]"
@@ -156,9 +175,13 @@ class BenchDeckTUI:
                 self._safe_add(stdscr, 2, width - 2, " ↑", width)
             if self.scroll < max_scroll:
                 self._safe_add(stdscr, 2 + view_height - 1, width - 2, " ↓", width)
-        status = self._status_msg or (
-            "h/l tabs  j/k move  Enter detail  e export  n run  x cancel  r reload  q quit"
-        )
+        status = self._status_msg
+        if not status:
+            if width < 56:
+                status = "1-4 tabs · j/k move · q quit"
+            else:
+                hints = self.FOOTER_HINTS.get(self.tab, self.FOOTER_HINTS[0])
+                status = " | ".join(hints)
         self._safe_add(stdscr, height - 1, 0, status, width, footer_attr)
         stdscr.refresh()
 
@@ -248,14 +271,28 @@ class BenchDeckTUI:
         return lines
 
     def _case_list(self, width: int) -> list[str]:
-        lines = ["Cases"]
+        cases = self._cases()
         judgments_by_case: dict[int, list[dict[str, Any]]] = {}
         for j in self.snapshot.judgments:
             cid = j.get("case_id")
             if cid is not None:
                 judgments_by_case.setdefault(cid, []).append(j)
         blocks = {b.get("case_id"): b for b in self.snapshot.policy_blocks}
-        for index, case in enumerate(self._cases()):
+        # Header counts: total, judged, blocked. Computed against the set
+        # of case IDs that are actual integers (matches the row-render
+        # filter below so a malformed plan does not skew the counts).
+        case_ids = {c.get("id") for c in cases if isinstance(c.get("id"), int)}
+        total = len(case_ids)
+        judged = sum(1 for cid in case_ids if cid in judgments_by_case)
+        blocked = sum(1 for cid in case_ids if cid in blocks)
+        header = f"Cases: {total} total · {judged} judged · {blocked} blocked"
+        if len(header) > width:
+            # Truncate to width chars; the curses display will further
+            # clip to width-1 visible cells. The header still begins
+            # with "Cases: N total …" so the meaning is preserved.
+            header = header[:width]
+        lines = [header]
+        for index, case in enumerate(cases):
             case_id = case.get("id")
             if not isinstance(case_id, int):
                 continue
@@ -271,6 +308,11 @@ class BenchDeckTUI:
                 state = "BLOCKED"
             else:
                 state = "PENDING"
+            # Prepend a worst-case status mark so each row carries a
+            # quick visual signal: [✓] pass, [!] warn, [X] fail/blocked.
+            mark = _status_mark_for_state(state)
+            if mark:
+                state = f"{mark} {state}"
             marker = ">" if index == self.selected else " "
             title = str(case.get("title", "Untitled"))
             prefix = f"{marker}{case_id:>2} "
@@ -292,6 +334,12 @@ class BenchDeckTUI:
             "",
         ]
         lines += _section("Purpose", str(case.get("purpose", "")), width)
+        lines += _section(
+            "Test Prompt",
+            str(case.get("test_prompt", "")),
+            width,
+            prefix="│ ",
+        )
         if case_judgments:
             for j_idx, judgment in enumerate(case_judgments):
                 if j_idx > 0:
@@ -304,7 +352,12 @@ class BenchDeckTUI:
                 lines += _section("Gate", f"{gate.get('status')}: {gate.get('reason', '')}", width)
                 result = self._result_for(case_id, agent)
                 if result:
-                    lines += _section("Agent output", str(result.get("final_output", "")), width)
+                    lines += _section(
+                        "Agent output",
+                        str(result.get("final_output", "")),
+                        width,
+                        prefix="│ ",
+                    )
         else:
             agent_results = {}
             for agent_label in self.snapshot.results:
@@ -629,9 +682,58 @@ def _wrap(text: str, width: int) -> list[str]:
     return textwrap.wrap(text, width=max(12, width - 1), replace_whitespace=False) or [""]
 
 
-def _section(title: str, text: str, width: int) -> list[str]:
+def _section(
+    title: str, text: str, width: int, prefix: str = ""
+) -> list[str]:
+    """Wrap `text` into a section block with a `title` heading.
+
+    The first line is the `title` (un-prefixed). The wrapped body
+    lines are each prefixed with `prefix` (default empty string) so
+    callers can mark code-ish output sections with a leading glyph.
+    The wrap width is reduced by `len(prefix)` so the prefixed lines
+    still fit within the available `width`.
+    """
     lines = [title]
+    wrap_width = max(12, width - 1)
+    if prefix:
+        wrap_width = max(12, width - 1 - len(prefix))
     for paragraph in text.splitlines() or [""]:
-        lines.extend(_wrap(paragraph, width))
+        wrapped = _wrap(paragraph, wrap_width)
+        if prefix:
+            wrapped = [prefix + line for line in wrapped]
+        lines.extend(wrapped)
     lines.append("")
     return lines
+
+
+def _status_mark_for_state(state: str) -> str:
+    """Return the status mark prefix for a case-list state string.
+
+    The state is one of:
+      - "BLOCKED" → "[X]"
+      - "Rating[agent] Rating[agent] …" (one or more tokens) → worst-case
+        mark among the rating tokens:
+          Fail                → "[X]"
+          Acceptable / Weak   → "[!]"
+          Excellent / Strong  → "[✓]"
+      - "PENDING" or anything unrecognized → "" (no mark)
+
+    The worst-case rule means a case with two judges (Strong + Fail)
+    is marked "[X]" not "[✓]". This is the natural semantics for
+    "what is the verdict for this case" — the worst rating wins.
+    """
+    if state == "BLOCKED":
+        return "[X]"
+    ratings: list[str] = []
+    for token in state.split():
+        if "[" in token:
+            ratings.append(token.split("[", 1)[0])
+    if not ratings:
+        return ""
+    if any(r == "Fail" for r in ratings):
+        return "[X]"
+    if any(r in ("Acceptable", "Weak") for r in ratings):
+        return "[!]"
+    if all(r in ("Excellent", "Strong") for r in ratings):
+        return "[✓]"
+    return ""
