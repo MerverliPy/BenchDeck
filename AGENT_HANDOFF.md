@@ -171,7 +171,7 @@ All 20 original findings (13 Phase 1 + 7 audit round 1) remain resolved. See `RE
 
 ### Risk: No PyPI release exercised (Ongoing)
 
-CI workflows for PyPI publishing (`publish.yml`) and GitHub releases with SBOM (`release.yml`) exist but have not been triggered (no `v*` tag pushed). The `IMPLEMENTATION_CHECKLIST.md` has two unchecked boxes for publish and signed artifacts.
+CI workflows for PyPI publishing (`publish.yml`, supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing — see `docs/publish.md`) and GitHub releases with SBOM (`release.yml`) exist. The first tag push (`v0.1.2`) triggered the workflow but the Trusted Publishing exchange failed with `invalid-publisher` (no PyPI publisher is configured for this repo yet). The `IMPLEMENTATION_CHECKLIST.md` still has two unchecked boxes for publish and signed artifacts.
 
 ### Risk: `OPENCODE_IMPLEMENTATION_PHASES.md` partially stale (New)
 

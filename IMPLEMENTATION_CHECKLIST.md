@@ -33,5 +33,5 @@
 - [x] Python package and console entry point.
 - [x] CI across Python 3.11-3.13.
 - [x] Regression fixture and tests.
-- [ ] Publish package release. *(CI workflows for publish and release with SBOM exist; awaiting `v*` tag push.)*
+- [ ] Publish package release. *(CI workflows for publish and release with SBOM exist; `.github/workflows/publish.yml` now supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing. See `docs/publish.md`.)*
 - [ ] Add signed release artifacts and SBOM.

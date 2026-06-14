@@ -54,7 +54,7 @@ All findings from the first 2026-06-12 audit round are resolved. See `AGENT_HAND
 
 ## Remaining Known Limitations
 
-- **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`) and release with SBOM (`release.yml`) exist but have not been triggered (no `v*` tag pushed).
+- **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`, supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing — see `docs/publish.md`) and release with SBOM (`release.yml`) exist; no tag has produced a successful publish yet. The first tag push (`v0.1.2`) failed at the Trusted Publishing exchange because no PyPI publisher is configured for this repo yet.
 - **Inspector hardening pending.** `inspect.py` validates schema but not checksums, referential integrity, or counter consistency.
 - **No cross-process run lock.** `storage.py` uses atomic writes but concurrent writers could race.
 - **No Windows testing.** Developed and tested on Linux only.

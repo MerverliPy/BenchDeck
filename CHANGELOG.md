@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`publish.yml` now supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing.**
+  The first `v0.1.2` tag push failed with
+  `Trusted publishing exchange failure: invalid-publisher` because no PyPI
+  Trusted Publisher is configured for `MerverliPy/BenchDeck`. The workflow
+  now picks the auth mode at runtime: if the `PYPI_API_TOKEN` repository
+  secret is set it is used directly; otherwise the OIDC path runs and the
+  step summary prints the exact publisher form fields required on PyPI
+  (owner `MerverliPy`, repo `BenchDeck`, workflow `publish.yml`, environment
+  `pypi`). See `docs/publish.md` for the full setup of both paths.
+
 ## 0.1.2 — 2026-06-13
 
 ### Added

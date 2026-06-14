@@ -33,5 +33,52 @@ jobs:
       - name: Check with twine
         run: twine check dist/*
 
-      - name: Publish to PyPI
+      # PyPI offers two authentication paths:
+      #   A) API token via the `PYPI_API_TOKEN` repo secret (works immediately;
+      #      no PyPI project-side config required).
+      #   B) Trusted Publishing via OIDC (no secret in the repo; requires a
+      #      one-time publisher entry on PyPI for this repo + workflow +
+      #      environment). See docs/publish.md for the exact form fields.
+      # The path is chosen at runtime based on whether the secret is set.
+      - name: Select PyPI publish auth mode
+        id: pypi-auth
+        env:
+          HAS_TOKEN: ${{ secrets.PYPI_API_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" = "true" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+            {
+              echo "## PyPI publish: API token"
+              echo
+              echo "Using the \`PYPI_API_TOKEN\` repository secret."
+              echo "No PyPI Trusted Publisher is required for this path."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+            {
+              echo "## PyPI publish: Trusted Publishing (OIDC)"
+              echo
+              echo "No \`PYPI_API_TOKEN\` secret set. The workflow is using OIDC."
+              echo "A matching Trusted Publisher must exist on PyPI for:"
+              echo
+              echo "* Owner: \`MerverliPy\`"
+              echo "* Repository: \`BenchDeck\`"
+              echo "* Workflow filename: \`publish.yml\`"
+              echo "* Environment name: \`pypi\`"
+              echo
+              echo "Configure at <https://pypi.org/manage/account/publishing/>."
+              echo "See \`docs/publish.md\` for step-by-step instructions."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publish to PyPI (API token)
+        if: ${{ steps.pypi-auth.outputs.mode == 'token' }}
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ env.PYPI_API_TOKEN }}
+
+      - name: Publish to PyPI (Trusted Publishing)
+        if: ${{ steps.pypi-auth.outputs.mode == 'oidc' }}
         uses: pypa/gh-action-pypi-publish@release/v1

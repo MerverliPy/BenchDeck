@@ -206,7 +206,7 @@ See `docs/architecture.md`, `docs/benchmark-contract.md`, and `docs/mobile-tui.m
 
 ## Limitations
 
-- **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`) and release with SBOM (`release.yml`) exist but have not been triggered (no `v*` tag pushed).
+- **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`, supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing — see `docs/publish.md`) and release with SBOM (`release.yml`) exist; no tag has produced a successful publish yet.
 - **Inspector hardening pending.** `inspect.py` validates schema but not checksums, referential integrity, or counter consistency.
 - **No cross-process run lock.** `storage.py` uses atomic writes (`os.replace`), but concurrent writers to the same output directory could race.
 - **No Windows testing.** Developed and tested on Linux only.
