@@ -47,8 +47,11 @@ def key_file() -> Path:
     if not path.is_file():
         raise ProductTestError("configured OpenAI test key file does not exist")
     mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & 0o077:
-        raise ProductTestError("OpenAI test key file must not be readable by group or other")
+    if mode & 0o007:
+        # Reject only if 'other' has any permission; allow owner+group
+        # so the WSL2 9P bind mount of mode 0440 is readable to the
+        # container's run-as user (same UID, group read preserved).
+        raise ProductTestError("OpenAI test key file must not be readable by other")
     if not path.read_text(encoding="utf-8").strip():
         raise ProductTestError("OpenAI test key file is empty")
     return path
