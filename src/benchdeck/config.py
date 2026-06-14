@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -17,14 +18,12 @@ def load_config(explicit_path: str | None = None) -> dict[str, Any]:
     """
     merged: dict[str, Any] = {}
     search_paths: list[Path] = []
-    try:
+    # HOME unset and pwd lookup failed (e.g. running as an unmapped UID
+    # inside a container, or under patch.dict(os.environ, {}, clear=True)
+    # in tests). Skip the home-dir candidate rather than crash; the
+    # local /workspace/benchdeck.toml and any --config still apply.
+    with contextlib.suppress(RuntimeError):
         search_paths.append(Path.home() / ".config" / "benchdeck" / "config.toml")
-    except RuntimeError:
-        # HOME unset and pwd lookup failed (e.g. running as an unmapped UID
-        # inside a container, or under patch.dict(os.environ, {}, clear=True)
-        # in tests). Skip the home-dir candidate rather than crash; the
-        # local /workspace/benchdeck.toml and any --config still apply.
-        pass
     search_paths.append(Path("benchdeck.toml"))
     if explicit_path:
         search_paths.append(Path(explicit_path))
