@@ -1000,3 +1000,57 @@ def test_poll_subprocess_noop_when_proc_is_none(tmp_path: Path) -> None:
 
     # No-op: status message unchanged.
     assert tui._status_msg == "prior status"
+
+
+# ── _launch_run with agent_b (P0-7) ─────────────────────────────────────────
+
+
+def test_launch_run_includes_agent_b_when_present(tmp_path: Path) -> None:
+    """When both `_agent_a_path` and `_agent_b_path` are set and both
+    files exist, the launched command list includes `--agent-b` followed
+    by the agent_b path (in addition to `--agent-a`)."""
+    agent_a = tmp_path / "agent_a.md"
+    agent_a.write_text("# Agent A")
+    agent_b = tmp_path / "agent_b.md"
+    agent_b.write_text("# Agent B")
+    tui = BenchDeckTUI(
+        tmp_path,
+        agent_a_path=agent_a,
+        agent_b_path=agent_b,
+        model="gpt-4o",
+    )
+    with _mock_popen() as mock_popen:
+        tui._launch_run()
+    # Sanity: the subprocess was spawned.
+    assert tui._proc is not None
+    # The mock was called with the command list as the first positional arg.
+    assert mock_popen.called
+    cmd = mock_popen.call_args[0][0]
+    # The single-agent flags must be present (regression guard for the
+    # existing path).
+    assert "--agent-a" in cmd
+    assert str(agent_a) in cmd
+    # The two-agent flag must be appended because both files exist.
+    assert "--agent-b" in cmd
+    idx = cmd.index("--agent-b")
+    assert cmd[idx + 1] == str(agent_b)
+
+
+def test_launch_run_omits_agent_b_when_file_missing(tmp_path: Path) -> None:
+    """When `_agent_b_path` is set but the file does NOT exist, the
+    launched command does NOT include `--agent-b` (the guard in
+    `_launch_run` skips the flag if the file is missing)."""
+    agent_a = tmp_path / "agent_a.md"
+    agent_a.write_text("# Agent A")
+    agent_b = tmp_path / "agent_b.md"  # file is NOT created
+    tui = BenchDeckTUI(
+        tmp_path,
+        agent_a_path=agent_a,
+        agent_b_path=agent_b,
+        model="gpt-4o",
+    )
+    with _mock_popen() as mock_popen:
+        tui._launch_run()
+    assert tui._proc is not None
+    cmd = mock_popen.call_args[0][0]
+    assert "--agent-b" not in cmd
