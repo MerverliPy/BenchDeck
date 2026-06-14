@@ -12,6 +12,12 @@
 
 set -euo pipefail
 
+# Rootless Docker wiring. The actual socket is at /run/user/<uid>/docker.sock
+# when the systemd user manager is running, but the dockerd-rootless-setuptool's
+# 'rootless' context points at the fallback path (which is stale). Set explicitly.
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+
 pass=0
 fail=0
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,6 +78,7 @@ docker run --rm --name "$test_name" \
   --security-opt no-new-privileges:true \
   --read-only \
   --network=none \
+  --user 1000:1000 \
   --tmpfs /tmp:rw,noexec,nosuid,size=32m \
   "$test_img" \
   sh -c "$inner" >/tmp/benchdeck-runner-smoke-inner.$$ 2>&1
