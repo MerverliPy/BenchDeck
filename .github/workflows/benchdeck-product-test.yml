@@ -36,8 +36,6 @@ jobs:
     # change this to ubuntu-latest or a rootful Docker runner.
     runs-on: [self-hosted, linux, rootless-docker]
     timeout-minutes: 90
-    env:
-      PRODUCT_TEST_ARCHIVE_DIR: ${{ runner.temp }}/benchdeck-product-test-archives
 
     steps:
       - name: Checkout exact triggering commit without third-party actions
@@ -142,6 +140,9 @@ jobs:
       - name: Archive evidence on controlled runner
         if: ${{ always() }}
         shell: bash
+        env:
+          # `runner.temp` is only available at the step level, not the job level
+          PRODUCT_TEST_ARCHIVE_DIR: ${{ runner.temp }}/benchdeck-product-test-archives
         run: |
           set -euo pipefail
           mkdir -p "${PRODUCT_TEST_ARCHIVE_DIR}"
