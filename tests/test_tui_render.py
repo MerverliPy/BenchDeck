@@ -582,3 +582,162 @@ def test_render_dispatches_all_four_tabs(make_fake_stdscr: Any) -> None:
             f"tab {tab_idx}: expected first line to start with {expected_prefix!r},"
             f" got {lines[0]!r}"
         )
+
+
+# ── multi-judge disagreement in _detail (P0-2) ──────────────────────────────
+
+
+def test_detail_shows_judge_disagreement_when_ratings_diverge() -> None:
+    """When 3 judgments on the same case have 3 distinct ratings, the
+    detail view emits the 'Judge disagreement detected:' block with
+    one line per rating (sorted) showing the per-rating count."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Diverging case",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                    "why": "good",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_b",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_c",
+                    "overall_rating": "Weak",
+                    "why": "lacking",
+                    "gate_check": {"status": "Fail", "reason": "no"},
+                },
+            ],
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    assert "Judge disagreement detected:" in text
+    # Per-rating counts, sorted alphabetically: Excellent, Strong, Weak.
+    assert "  Excellent: 1 judge(s)" in text
+    assert "  Strong: 1 judge(s)" in text
+    assert "  Weak: 1 judge(s)" in text
+    # The disagreement block is preceded by a blank line and is the last
+    # block before any infrastructure-error section (none in this snapshot).
+    assert text.rstrip().endswith("  Weak: 1 judge(s)")
+
+
+def test_detail_no_disagreement_block_when_ratings_agree() -> None:
+    """When 2+ judgments on the same case all share one rating, the
+    'Judge disagreement detected:' block is NOT emitted."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Agreeing case",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_b",
+                    "overall_rating": "Strong",
+                    "why": "agree",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+            ],
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    assert "Judge disagreement detected:" not in text
+    # Sanity: the per-judgment sections are still present.
+    assert "Agent: agent_a" in text
+    assert "Agent: agent_b" in text
+    # The `_section` helper puts the title on one line and the value on the
+    # next, so "Strong" appears as a standalone line per judgment (>= 2).
+    assert text.count("\nStrong\n") >= 2
+
+
+def test_detail_disagreement_counts_duplicate_ratings() -> None:
+    """When ratings include duplicates (e.g. 4 judges, ratings split 2-1-1),
+    the per-rating count reflects the duplicate."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Split case",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_b",
+                    "overall_rating": "Excellent",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_c",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                },
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_d",
+                    "overall_rating": "Weak",
+                    "why": "ok",
+                    "gate_check": {"status": "Fail", "reason": "no"},
+                },
+            ],
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    assert "Judge disagreement detected:" in text
+    # Sorted: Excellent, Strong, Weak with counts 2, 1, 1.
+    assert "  Excellent: 2 judge(s)" in text
+    assert "  Strong: 1 judge(s)" in text
+    assert "  Weak: 1 judge(s)" in text
