@@ -94,6 +94,11 @@ def main() -> int:
     run_id = "live-" + dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
     output_host = evidence_root(root) / state["run_id"] / "live" / run_id
     output_host.mkdir(parents=True, exist_ok=True)
+    # WSL2 9P bind mounts do not always preserve the source dir mode into
+    # the container. Set 0o777 so the container's run-as user (same UID
+    # as the host creator) can read/write regardless of how the mount
+    # presents the bits.
+    os.chmod(output_host, 0o777)
     live_container = state["container"] + "-live-" + uuid.uuid4().hex[:6]
     proxy = state["proxy"] + "-live"
     start_proxy(
