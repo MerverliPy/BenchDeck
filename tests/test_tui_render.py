@@ -1079,17 +1079,71 @@ def test_footer_hint_short_form_at_narrow_width(make_fake_stdscr: Any) -> None:
 
 
 def test_footer_hint_full_form_at_wide_width(make_fake_stdscr: Any) -> None:
-    """At width >= 56, the footer uses the full key list with all hints."""
-    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    """At width >= 56 with tab=0 (Overview), the footer uses the
+    per-tab hint map joined with ' | '. This is the wide-form contract
+    that P1-1 introduced; the pre-P1-1 two-space-separated full list
+    has been replaced."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
     stdscr = make_fake_stdscr(24, 80)
     tui._draw(stdscr)
     footer_calls = [c for c in stdscr.calls if c[0] == 23]
     assert len(footer_calls) == 1
     _r, _c, text, _n, _a = footer_calls[0]
+    # The Overview tab's contextual hint tokens.
     assert "h/l tabs" in text
-    assert "Enter detail" in text
-    assert "e export" in text
+    assert "j/k move" in text
     assert "n run" in text
-    assert "x cancel" in text
     assert "r reload" in text
     assert "q quit" in text
+    # The P1-1 joiner is in effect.
+    assert " | " in text
+    # Tokens that belong to other tabs (Cases / Detail) must not leak in.
+    assert "Enter open" not in text
+    assert "e export" not in text
+    assert "j/k scroll" not in text
+
+
+# ── contextual footer hint per tab (P1-1) ───────────────────────────────────
+
+
+def test_footer_hint_context_for_cases_tab(make_fake_stdscr: Any) -> None:
+    """At width=80 with tab=1 (Cases), the footer leads with
+    `Enter open · e export` (the most salient keys for the Cases tab)
+    rather than the Overview-default `h/l tabs · j/k move · n run`."""
+    tui = _make_tui(
+        tab=1,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    # Cases-specific keys must be present.
+    assert "Enter open" in text
+    assert "e export" in text
+    # The Cases hint uses the contextual map, not the default
+    # two-space-separated string from P1-6.
+    assert " | " in text
+
+
+def test_footer_hint_truncates_at_narrow_width(make_fake_stdscr: Any) -> None:
+    """At narrow widths (width < 56), the short-form hint is used and
+    the recorded footer line is at most `width` characters long."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
+    stdscr = make_fake_stdscr(24, 40)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    # At width < 56 the P1-6 short form is used (28 chars), so the
+    # recorded (untruncated) text is bounded by `width`.
+    assert len(text) <= 40
+    # The contextual map is NOT applied at narrow widths.
+    assert " | " not in text

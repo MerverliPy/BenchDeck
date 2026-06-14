@@ -18,6 +18,17 @@ class BenchDeckTUI:
 
     TABS = ("Overview", "Cases", "Detail", "Help")
 
+    # Per-tab contextual footer hints. The first entry is the most
+    # salient for the tab; later entries fill in secondary keys. The
+    # render function joins with " | " at width >= 56, or falls back to
+    # the short form ("1-4 tabs · j/k move · q quit") at width < 56.
+    FOOTER_HINTS: dict[int, list[str]] = {
+        0: ["h/l tabs", "j/k move", "n run", "r reload", "q quit"],
+        1: ["Enter open", "e export", "j/k move", "h/l tabs", "q quit"],
+        2: ["j/k scroll", "h/l tabs", "r reload", "q quit"],
+        3: ["h/l tabs", "q quit"],
+    }
+
     def __init__(
         self,
         run_dir: Path,
@@ -161,10 +172,8 @@ class BenchDeckTUI:
             if width < 56:
                 status = "1-4 tabs · j/k move · q quit"
             else:
-                status = (
-                    "h/l tabs  j/k move  Enter detail  e export"
-                    "  n run  x cancel  r reload  q quit"
-                )
+                hints = self.FOOTER_HINTS.get(self.tab, self.FOOTER_HINTS[0])
+                status = " | ".join(hints)
         self._safe_add(stdscr, height - 1, 0, status, width, footer_attr)
         stdscr.refresh()
 
