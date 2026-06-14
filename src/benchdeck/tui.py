@@ -334,6 +334,12 @@ class BenchDeckTUI:
             "",
         ]
         lines += _section("Purpose", str(case.get("purpose", "")), width)
+        lines += _section(
+            "Test Prompt",
+            str(case.get("test_prompt", "")),
+            width,
+            prefix="│ ",
+        )
         if case_judgments:
             for j_idx, judgment in enumerate(case_judgments):
                 if j_idx > 0:
@@ -346,7 +352,12 @@ class BenchDeckTUI:
                 lines += _section("Gate", f"{gate.get('status')}: {gate.get('reason', '')}", width)
                 result = self._result_for(case_id, agent)
                 if result:
-                    lines += _section("Agent output", str(result.get("final_output", "")), width)
+                    lines += _section(
+                        "Agent output",
+                        str(result.get("final_output", "")),
+                        width,
+                        prefix="│ ",
+                    )
         else:
             agent_results = {}
             for agent_label in self.snapshot.results:
@@ -671,10 +682,26 @@ def _wrap(text: str, width: int) -> list[str]:
     return textwrap.wrap(text, width=max(12, width - 1), replace_whitespace=False) or [""]
 
 
-def _section(title: str, text: str, width: int) -> list[str]:
+def _section(
+    title: str, text: str, width: int, prefix: str = ""
+) -> list[str]:
+    """Wrap `text` into a section block with a `title` heading.
+
+    The first line is the `title` (un-prefixed). The wrapped body
+    lines are each prefixed with `prefix` (default empty string) so
+    callers can mark code-ish output sections with a leading glyph.
+    The wrap width is reduced by `len(prefix)` so the prefixed lines
+    still fit within the available `width`.
+    """
     lines = [title]
+    wrap_width = max(12, width - 1)
+    if prefix:
+        wrap_width = max(12, width - 1 - len(prefix))
     for paragraph in text.splitlines() or [""]:
-        lines.extend(_wrap(paragraph, width))
+        wrapped = _wrap(paragraph, wrap_width)
+        if prefix:
+            wrapped = [prefix + line for line in wrapped]
+        lines.extend(wrapped)
     lines.append("")
     return lines
 

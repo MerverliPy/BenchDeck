@@ -1358,3 +1358,86 @@ def test_draw_title_omits_age_before_first_load(make_fake_stdscr: Any) -> None:
     assert len(title_calls) == 1
     _r, _c, text, _n, _a = title_calls[0]
     assert "s ago" not in text
+
+
+# ── block markers in _detail (P1-4) ──────────────────────────────────────────
+
+
+def test_detail_marks_test_prompt_block() -> None:
+    """The Test Prompt section in `_detail` has its wrapped lines
+    prefixed with the `│ ` glyph (Unicode box-drawing light vertical
+    + space). The title line `Test Prompt` is NOT prefixed."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                        "test_prompt": "Do the first thing.\nThen verify the second.",
+                    }
+                ]
+            },
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    # The Test Prompt section title is present (un-prefixed).
+    assert "Test Prompt" in text
+    # The block marker is present on the wrapped body lines.
+    assert "│ " in text
+    # The first body line is a wrapped-prefixed version of the prompt.
+    assert "│ Do the first thing." in text
+
+
+def test_detail_marks_agent_output_block() -> None:
+    """The Agent output section in `_detail` has its wrapped lines
+    prefixed with the `│ ` glyph. The title line `Agent output` is
+    NOT prefixed."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                        "test_prompt": "Do the thing.",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                }
+            ],
+            results={
+                "agent_a": [
+                    {
+                        "case_id": 1,
+                        "final_output": "Done.\nNext step here.",
+                    }
+                ]
+            },
+        ),
+    )
+    lines = tui._detail(80)
+    text = "\n".join(lines)
+    # The Agent output title is present.
+    assert "Agent output" in text
+    # The block marker is present on the wrapped body lines.
+    assert "│ " in text
+    # At least one wrapped line is prefixed.
+    assert "│ Done." in text
+    # The title line itself is NOT prefixed.
+    title_line = next(line for line in lines if line == "Agent output")
+    assert "│ " not in title_line
