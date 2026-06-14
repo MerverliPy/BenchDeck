@@ -128,6 +128,14 @@ class BenchDeckTUI:
         title = " BENCHDECK "
         proc_info = f" PID:{self._proc.pid}" if self._proc else ""
         status = str(self.snapshot.metadata.get("status", "no run"))
+        # Title age suffix: only at width >= 48 to preserve the 32-47
+        # column band for the title text. The age is recomputed on
+        # every draw (so it advances as time passes) but the suffix is
+        # not shown before the first `load_snapshot` call (last_load=0).
+        title_str = title + f"[{status}]{proc_info}"
+        if self.last_load > 0 and width >= 48:
+            elapsed = int(time.monotonic() - self.last_load)
+            title_str += f" · {elapsed}s ago"
         title_attr = curses.A_REVERSE
         tab_attr: int = curses.A_BOLD
         footer_attr: int = curses.A_REVERSE
@@ -136,7 +144,7 @@ class BenchDeckTUI:
             title_attr = curses.color_pair(6) | curses.A_BOLD
             tab_attr = curses.color_pair(5) | curses.A_BOLD
             footer_attr = curses.color_pair(6) | curses.A_BOLD
-        self._safe_add(stdscr, 0, 0, title + f"[{status}]{proc_info}", width, title_attr)
+        self._safe_add(stdscr, 0, 0, title_str, width, title_attr)
         tab_names = ("Ov", "Ca", "De", "He") if width < 40 else self.TABS
         tab_line = " ".join(
             f"{i + 1}:{tab_names[i]}" if i != self.tab else f"[{i + 1}:{tab_names[i]}]"

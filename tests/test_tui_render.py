@@ -6,6 +6,7 @@ No terminal required.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -1295,3 +1296,65 @@ def test_case_list_includes_status_marks_for_blocked() -> None:
     blocked_line = next(line for line in lines if "BLOCKED" in line)
     assert "[X]" in blocked_line
     assert blocked_line.index("[X]") < blocked_line.index("BLOCKED")
+
+
+# ── title age suffix (P1-2) ─────────────────────────────────────────────────
+
+
+def test_draw_title_shows_last_loaded_age(make_fake_stdscr: Any) -> None:
+    """At width >= 48 with `self.last_load > 0`, the title row
+    includes a `· Ns ago` suffix showing the seconds since the
+    last snapshot load."""
+    # Set last_load to a fixed value 10s in the past to avoid timing
+    # flakiness; the test computes the expected elapsed dynamically
+    # so the assertion is robust to small jitter.
+    tui = _make_tui(
+        snapshot=Snapshot(metadata={"status": "running"}),
+        last_load=time.monotonic() - 10,
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    title_calls = [c for c in stdscr.calls if c[0] == 0]
+    assert len(title_calls) == 1
+    _r, _c, text, _n, _a = title_calls[0]
+    expected_elapsed = int(time.monotonic() - tui.last_load)
+    expected_suffix = f" · {expected_elapsed}s ago"
+    assert text.endswith(expected_suffix)
+    # The age segment is preceded by the title text.
+    assert "BENCHDECK" in text
+
+
+def test_draw_title_omits_age_when_narrow(make_fake_stdscr: Any) -> None:
+    """At width < 48, the title does NOT include the age suffix,
+    preserving the full 32-47 column band for the title text."""
+    tui = _make_tui(
+        snapshot=Snapshot(metadata={"status": "running"}),
+        last_load=time.monotonic() - 10,
+    )
+    stdscr = make_fake_stdscr(24, 40)
+    tui._draw(stdscr)
+    title_calls = [c for c in stdscr.calls if c[0] == 0]
+    assert len(title_calls) == 1
+    _r, _c, text, _n, _a = title_calls[0]
+    # The age suffix must not appear at narrow widths.
+    assert "s ago" not in text
+    assert "·" not in text
+    # The base title is preserved.
+    assert "BENCHDECK" in text
+    assert "running" in text
+
+
+def test_draw_title_omits_age_before_first_load(make_fake_stdscr: Any) -> None:
+    """Before the first `load_snapshot` call, `self.last_load` is 0
+    and the age suffix is NOT shown (avoids showing '-1s ago' on the
+    very first draw)."""
+    tui = _make_tui(
+        snapshot=Snapshot(metadata={"status": "running"}),
+        last_load=0.0,  # default value before any load
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    title_calls = [c for c in stdscr.calls if c[0] == 0]
+    assert len(title_calls) == 1
+    _r, _c, text, _n, _a = title_calls[0]
+    assert "s ago" not in text
