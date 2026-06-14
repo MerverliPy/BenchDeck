@@ -156,9 +156,15 @@ class BenchDeckTUI:
                 self._safe_add(stdscr, 2, width - 2, " ↑", width)
             if self.scroll < max_scroll:
                 self._safe_add(stdscr, 2 + view_height - 1, width - 2, " ↓", width)
-        status = self._status_msg or (
-            "h/l tabs  j/k move  Enter detail  e export  n run  x cancel  r reload  q quit"
-        )
+        status = self._status_msg
+        if not status:
+            if width < 56:
+                status = "1-4 tabs · j/k move · q quit"
+            else:
+                status = (
+                    "h/l tabs  j/k move  Enter detail  e export"
+                    "  n run  x cancel  r reload  q quit"
+                )
         self._safe_add(stdscr, height - 1, 0, status, width, footer_attr)
         stdscr.refresh()
 

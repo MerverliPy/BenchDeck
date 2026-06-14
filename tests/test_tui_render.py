@@ -1054,3 +1054,42 @@ def test_launch_run_omits_agent_b_when_file_missing(tmp_path: Path) -> None:
     assert tui._proc is not None
     cmd = mock_popen.call_args[0][0]
     assert "--agent-b" not in cmd
+
+
+# ── footer hint width-based selection (P1-6) ───────────────────────────────
+
+
+def test_footer_hint_short_form_at_narrow_width(make_fake_stdscr: Any) -> None:
+    """At width < 56, the footer (row height-1) uses the short hint
+    `1-4 tabs · j/k move · q quit` so it fits within the 32-56 column
+    band. The full-form tokens must NOT appear."""
+    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    stdscr = make_fake_stdscr(24, 40)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    assert "1-4 tabs" in text
+    assert "j/k move" in text
+    assert "q quit" in text
+    # Full-form tokens must be absent.
+    assert "Enter detail" not in text
+    assert "e export" not in text
+    assert "h/l tabs" not in text
+
+
+def test_footer_hint_full_form_at_wide_width(make_fake_stdscr: Any) -> None:
+    """At width >= 56, the footer uses the full key list with all hints."""
+    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    assert "h/l tabs" in text
+    assert "Enter detail" in text
+    assert "e export" in text
+    assert "n run" in text
+    assert "x cancel" in text
+    assert "r reload" in text
+    assert "q quit" in text
