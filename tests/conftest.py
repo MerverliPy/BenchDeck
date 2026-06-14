@@ -371,3 +371,62 @@ def output_dir(tmp_path: Path) -> Path:
     d = tmp_path / "benchmark_out"
     d.mkdir()
     return d
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Curses stand-in (for TUI _draw tests that do not require a real terminal)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class _FakeStdscr:
+    """Minimal stand-in for the curses window used by `BenchDeckTUI._draw`.
+
+    Records every ``addnstr`` call in ``self.calls`` as a
+    ``(row, col, text, n, attr)`` tuple, where ``text`` is the untruncated
+    string passed by the caller. The remaining methods are no-ops.
+
+    Constructed with a fixed (height, width); ``getmaxyx()`` returns them
+    in the standard curses order. The ``colors`` flag is accepted for
+    forward compatibility with Phase 2's theme-stub tests but has no
+    effect on the recorder today (the live TUI defaults to ``_has_color =
+    False`` so color pairs are never emitted by ``_init_colors`` in tests).
+    """
+
+    def __init__(self, height: int, width: int, *, colors: bool = False) -> None:
+        self.height = height
+        self.width = width
+        self.colors = colors
+        self.calls: list[tuple[int, int, str, int, int]] = []
+
+    def getmaxyx(self) -> tuple[int, int]:
+        return (self.height, self.width)
+
+    def erase(self) -> None:
+        return None
+
+    def refresh(self) -> None:
+        return None
+
+    def nodelay(self, flag: bool) -> None:
+        return None
+
+    def keypad(self, flag: bool) -> None:
+        return None
+
+    def addnstr(self, row: int, col: int, text: str, n: int, attr: int) -> None:
+        self.calls.append((row, col, text, n, attr))
+
+
+@pytest.fixture
+def make_fake_stdscr() -> Any:
+    """Factory for `_FakeStdscr` instances bound to a (height, width).
+
+    Used by Phase 0 boundary tests for `BenchDeckTUI._draw`. The `tests/`
+    directory is intentionally not a package, so conftest classes are not
+    directly importable from test modules; this fixture bridges that gap.
+    """
+
+    def _make(height: int, width: int, *, colors: bool = False) -> _FakeStdscr:
+        return _FakeStdscr(height, width, colors=colors)
+
+    return _make

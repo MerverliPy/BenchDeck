@@ -460,3 +460,125 @@ def test_cancel_timeout_clears_request(tmp_path: Path) -> None:
     tui._cancel_requested_at = tui._cancel_requested_at - 10.0
     tui._handle_key(ord(" "))
     assert tui._cancel_requested_at is None
+
+
+# ── _draw boundary tests (P0-1) ─────────────────────────────────────────────
+
+
+def test_draw_too_small_height(make_fake_stdscr: Any) -> None:
+    """height < 10 emits the single-line 'Terminal too small' message and
+    then returns without further output."""
+    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    stdscr = make_fake_stdscr(9, 80)
+    tui._draw(stdscr)
+    assert len(stdscr.calls) == 1
+    row, col, text, _n, _attr = stdscr.calls[0]
+    assert row == 0
+    assert col == 0
+    assert text.startswith("Terminal too small")
+    assert "(min 32x10)" in text
+    # The early return path must not invoke `refresh` (it does, but no
+    # further `addnstr` is allowed); assert no row 1+ content was drawn.
+    rows_used = {r for (r, _c, _t, _n, _a) in stdscr.calls}
+    assert rows_used == {0}
+
+
+def test_draw_too_small_width(make_fake_stdscr: Any) -> None:
+    """width < 32 emits the same single-line 'Terminal too small' message."""
+    tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
+    stdscr = make_fake_stdscr(24, 31)
+    tui._draw(stdscr)
+    assert len(stdscr.calls) == 1
+    _row, _col, text, _n, _attr = stdscr.calls[0]
+    assert text.startswith("Terminal too small")
+    assert "(min 32x10)" in text
+
+
+def test_draw_short_tab_names_at_width_39(make_fake_stdscr: Any) -> None:
+    """At width=39 the tab row uses the short form `[1:Ov] 2:Ca 3:De 4:He`
+    and does NOT include the long form `Overview` / `Cases`."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(
+            metadata={"status": "running"},
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                    }
+                ]
+            },
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 39)
+    tui._draw(stdscr)
+    tab_calls = [c for c in stdscr.calls if c[0] == 1]
+    assert len(tab_calls) == 1
+    _r, _c, tab_text, _n, _a = tab_calls[0]
+    assert "[1:Ov]" in tab_text
+    assert "2:Ca" in tab_text
+    assert "3:De" in tab_text
+    assert "4:He" in tab_text
+    # The long form must not appear in the tab row.
+    assert "Overview" not in tab_text
+    assert "Cases" not in tab_text
+    assert "Detail" not in tab_text
+    assert "Help" not in tab_text
+
+
+def test_render_dispatches_all_four_tabs(make_fake_stdscr: Any) -> None:
+    """`_render(width)` returns a non-empty list whose first line is
+    tab-appropriate for every one of the four TABS."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(
+            metadata={"status": "running"},
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Sample",
+                        "family": "happy_path",
+                        "purpose": "p",
+                        "test_prompt": "do the thing",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                }
+            ],
+            results={
+                "agent_a": [
+                    {
+                        "case_id": 1,
+                        "final_output": "Done.",
+                    }
+                ]
+            },
+        ),
+    )
+    expected_first_line: dict[int, str] = {
+        0: "Run:",
+        1: "Cases",
+        2: "Case 1:",
+        3: "Mobile SSH controls",
+    }
+    for tab_idx, expected_prefix in expected_first_line.items():
+        tui.tab = tab_idx
+        tui.selected = 0
+        tui.scroll = 0
+        lines = tui._render(80)
+        assert lines, f"tab {tab_idx} produced no lines"
+        assert lines[0].startswith(expected_prefix), (
+            f"tab {tab_idx}: expected first line to start with {expected_prefix!r},"
+            f" got {lines[0]!r}"
+        )
