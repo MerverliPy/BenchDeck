@@ -1219,3 +1219,79 @@ def test_case_list_header_truncates_at_minimum_width(make_fake_stdscr: Any) -> N
     assert len(text) <= 32
     # The leading text is preserved.
     assert text.startswith("Cases")
+
+
+# ── status marks in _case_list (P1-5) ───────────────────────────────────────
+
+
+def test_case_list_includes_status_marks_for_ratings() -> None:
+    """Each case-list row with a rating carries the worst-case status
+    mark before the state segment:
+        Excellent/Strong → [✓]
+        Acceptable/Weak  → [!]
+        Fail             → [X]"""
+    tui = _make_tui(
+        tab=1,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Excellent case"},
+                    {"id": 2, "title": "Acceptable case"},
+                    {"id": 3, "title": "Failing case"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                },
+                {
+                    "case_id": 2,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Acceptable",
+                },
+                {
+                    "case_id": 3,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Fail",
+                },
+            ],
+        ),
+    )
+    lines = tui._case_list(80)
+    text = "\n".join(lines)
+    # All three mark glyphs are present.
+    assert "[✓]" in text
+    assert "[!]" in text
+    assert "[X]" in text
+    # The underlying rating words are still present (marks are added,
+    # not replacements).
+    assert "Excellent" in text
+    assert "Acceptable" in text
+    assert "Fail" in text
+    # Each mark precedes its rating on the same row.
+    excellent_line = next(line for line in lines if "Excellent" in line)
+    assert excellent_line.index("[✓]") < excellent_line.index("Excellent")
+    fail_line = next(line for line in lines if "Fail" in line)
+    assert fail_line.index("[X]") < fail_line.index("Fail")
+
+
+def test_case_list_includes_status_marks_for_blocked() -> None:
+    """A case with a policy block is prefixed with [X] before the
+    BLOCKED state segment on the same row."""
+    tui = _make_tui(
+        tab=1,
+        snapshot=Snapshot(
+            plan={"cases": [{"id": 1, "title": "Blocked case"}]},
+            policy_blocks=[{"case_id": 1, "message": "policy"}],
+        ),
+    )
+    lines = tui._case_list(80)
+    text = "\n".join(lines)
+    assert "[X]" in text
+    assert "BLOCKED" in text
+    # The mark is on the same line as BLOCKED and precedes it.
+    blocked_line = next(line for line in lines if "BLOCKED" in line)
+    assert "[X]" in blocked_line
+    assert blocked_line.index("[X]") < blocked_line.index("BLOCKED")

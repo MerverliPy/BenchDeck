@@ -300,6 +300,11 @@ class BenchDeckTUI:
                 state = "BLOCKED"
             else:
                 state = "PENDING"
+            # Prepend a worst-case status mark so each row carries a
+            # quick visual signal: [✓] pass, [!] warn, [X] fail/blocked.
+            mark = _status_mark_for_state(state)
+            if mark:
+                state = f"{mark} {state}"
             marker = ">" if index == self.selected else " "
             title = str(case.get("title", "Untitled"))
             prefix = f"{marker}{case_id:>2} "
@@ -664,3 +669,36 @@ def _section(title: str, text: str, width: int) -> list[str]:
         lines.extend(_wrap(paragraph, width))
     lines.append("")
     return lines
+
+
+def _status_mark_for_state(state: str) -> str:
+    """Return the status mark prefix for a case-list state string.
+
+    The state is one of:
+      - "BLOCKED" → "[X]"
+      - "Rating[agent] Rating[agent] …" (one or more tokens) → worst-case
+        mark among the rating tokens:
+          Fail                → "[X]"
+          Acceptable / Weak   → "[!]"
+          Excellent / Strong  → "[✓]"
+      - "PENDING" or anything unrecognized → "" (no mark)
+
+    The worst-case rule means a case with two judges (Strong + Fail)
+    is marked "[X]" not "[✓]". This is the natural semantics for
+    "what is the verdict for this case" — the worst rating wins.
+    """
+    if state == "BLOCKED":
+        return "[X]"
+    ratings: list[str] = []
+    for token in state.split():
+        if "[" in token:
+            ratings.append(token.split("[", 1)[0])
+    if not ratings:
+        return ""
+    if any(r == "Fail" for r in ratings):
+        return "[X]"
+    if any(r in ("Acceptable", "Weak") for r in ratings):
+        return "[!]"
+    if all(r in ("Excellent", "Strong") for r in ratings):
+        return "[✓]"
+    return ""
