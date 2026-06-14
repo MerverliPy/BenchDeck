@@ -785,3 +785,90 @@ def test_overview_manifest_not_present_when_gen_zero(tmp_path: Path) -> None:
     assert "Manifest: not yet present" in text
     assert "WARNING" not in text
     assert "Manifest gen" not in text
+
+
+# ── scroll indicators in _draw (P0-4) ──────────────────────────────────────
+
+
+_INDICATOR_TEXTS = (" ↑", " ↓")
+
+
+def _indicator_calls(stdscr: Any) -> list[tuple[int, int, str, int, int]]:
+    """Return the recorded `addnstr` calls whose text starts with ` ↑` or ` ↓`."""
+    return [c for c in stdscr.calls if c[2].startswith(_INDICATOR_TEXTS)]
+
+
+def test_draw_scroll_indicator_at_top(make_fake_stdscr: Any) -> None:
+    """At scroll=0 (top), only the down-arrow indicator is emitted; the
+    up-arrow is suppressed because there is no content above the viewport."""
+    tui = _make_tui(
+        tab=1,  # Cases tab
+        scroll=0,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
+                ]
+            },
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # Sanity: clamp kept us at the top.
+    assert tui.scroll == 0
+    indicators = _indicator_calls(stdscr)
+    assert len(indicators) == 1
+    row, col, text, _n, _a = indicators[0]
+    # The down-arrow is shown at the bottom of the viewport.
+    assert text.startswith(" ↓")
+    assert col == 80 - 2
+    # view_height = 24 - 4 = 20, so the indicator is at row 2 + 20 - 1 = 21.
+    assert row == 2 + (24 - 4) - 1
+
+
+def test_draw_scroll_indicator_at_bottom(make_fake_stdscr: Any) -> None:
+    """At scroll=max_scroll (bottom), only the up-arrow indicator is
+    emitted; the down-arrow is suppressed because there is no content
+    below the viewport."""
+    tui = _make_tui(
+        tab=1,  # Cases tab
+        # Setting selected=49 forces `_clamp_scroll` to push the scroll
+        # to the maximum position (49 - 20 + 2 = 31 = max_scroll).
+        selected=49,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
+                ]
+            },
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # Sanity: clamp pushed scroll to max_scroll = 51 - 20 = 31.
+    assert tui.scroll == 51 - 20
+    indicators = _indicator_calls(stdscr)
+    assert len(indicators) == 1
+    row, col, text, _n, _a = indicators[0]
+    # The up-arrow is shown at the top of the viewport (row 2).
+    assert text.startswith(" ↑")
+    assert col == 80 - 2
+    assert row == 2
+
+
+def test_draw_no_indicator_when_fits(make_fake_stdscr: Any) -> None:
+    """When the rendered content fits inside the viewport, neither
+    scroll indicator is emitted."""
+    tui = _make_tui(
+        tab=1,  # Cases tab
+        snapshot=Snapshot(
+            plan={"cases": [{"id": 1, "title": "Only case"}]},
+        ),
+    )
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    # `_case_list` produces 2 lines (header + 1 case); view_height=20, so
+    # the content fits and no scroll is needed.
+    indicators = _indicator_calls(stdscr)
+    assert indicators == []
