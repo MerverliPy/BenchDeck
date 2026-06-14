@@ -872,3 +872,57 @@ def test_draw_no_indicator_when_fits(make_fake_stdscr: Any) -> None:
     # the content fits and no scroll is needed.
     indicators = _indicator_calls(stdscr)
     assert indicators == []
+
+
+# ── _line_attr colorization (P0-5) ─────────────────────────────────────────
+
+
+def test_line_attr_quoted_rating_not_colored() -> None:
+    """A rating token in double-quotes is NOT colored (current behavior).
+
+    This is a regression guard for the boundary check in `_line_attr`.
+    The double-quote character is not in the boundary set
+    ``(" ", "[", ":", "]", ",", "(")``, so the rating substring is
+    treated as a non-word match and the function returns 0. The
+    exemption is *incidental*, not intentional: it would silently break
+    if the boundary set were ever extended to include ``"``.
+
+    The plan named this test ``test_line_attr_quoted_rating_still_colored``;
+    the actual current behavior is "not colored", so the test name and
+    assertion are aligned with the function, not the plan's wording.
+    """
+    attr = BenchDeckTUI._line_attr('Judge said "Excellent" in the report')
+    assert attr == 0
+
+
+def test_line_attr_gate_pass_colored() -> None:
+    """A line containing both 'Pass' and 'Gate' is colored (green pair)."""
+    # Patch `curses.color_pair` to return a deterministic per-pair value
+    # so we can both confirm the gate branch was hit and that the
+    # resulting attribute is non-zero (i.e., the line is colored).
+    def _fake_color_pair(n: int) -> int:
+        return 0x100 * n
+
+    with patch("benchdeck.tui.curses.color_pair", side_effect=_fake_color_pair):
+        attr = BenchDeckTUI._line_attr("Pass: Gate ok")
+    # The Gate-Pass branch returns curses.color_pair(2).
+    assert attr == 0x200
+
+
+def test_line_attr_gate_fail_colored() -> None:
+    """A line containing both 'Fail' and 'Gate' is colored (red pair).
+
+    Note: this particular line is matched by the *rating* check
+    ('Fail' with whole-word boundary) first, not the gate check. The
+    rating-Fail branch and the gate-Fail branch both return the same
+    red pair, so the test asserts only that the result is colored and
+    matches pair 1.
+    """
+
+    def _fake_color_pair(n: int) -> int:
+        return 0x100 * n
+
+    with patch("benchdeck.tui.curses.color_pair", side_effect=_fake_color_pair):
+        attr = BenchDeckTUI._line_attr("Fail: Gate broken")
+    # The rating-Fail branch returns curses.color_pair(1).
+    assert attr == 0x100
