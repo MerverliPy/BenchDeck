@@ -6,6 +6,57 @@
 
 ---
 
+## 0. Current Status
+
+**Branch:** `tui/enhancement` (at `82b6c5c`, same as `main`).
+**Last update:** post-Phase 1 merge (2026-06-14).
+
+| Phase | Status | Merged at | Tests added | Production lines |
+|---|---|---|---:|---:|
+| Phase 0 | ✅ Complete | `d72033d` | +21 | 0 |
+| Phase 1 | ✅ Complete | `82b6c5c` | +13 | ~+113 |
+| Phase 2 | ⏳ Not started | — | 0 | 0 |
+| Phase 3 | ⏳ Not started | — | 0 | 0 |
+
+**Total so far:** 14 items implemented (8 P0 + 6 P1), 34 new tests, 0 to ~+113 production lines. All 144 TUI + screenshot tests pass; golden baselines unchanged.
+
+### Completed commits (in execution order)
+
+| Item | SHA | Title |
+|---|---|---|
+| P0-1 | `aec68ee` | draw-level boundary tests + `_FakeStdscr` + `DEMO_SNAPSHOT_VERSION` |
+| P0-2 | `2e03f77` | multi-judge disagreement in `_detail` (3 tests; plan: 2) |
+| P0-3 | `2fae355` | manifest integrity WARNING + not-yet-present branches |
+| P0-4 | `da65a51` | scroll indicators in `_draw` |
+| P0-5 | `2f88e68` | `_line_attr` boundary check + Gate Pass/Fail colorization |
+| P0-6 | `0927614` | `_poll_subprocess` rc!=0/rc==0/no-op paths (3 tests; plan: 2) |
+| P0-7 | `830bce0` | `_launch_run` with `agent_b` present + missing-file guard (2 tests; plan: 1) |
+| P0-8 | `b50335a` | `load_snapshot` of segmented `.b64.*` ZIP fixtures |
+| P1-6 | `0e5e7af` | footer hint short form at width < 56 |
+| P1-1 | `f96a25f` | contextual `FOOTER_HINTS` per tab (P1-6 test updated to match) |
+| P1-3 | `7d610f7` | Cases tab header `Cases: N total · M judged · K blocked` |
+| P1-5 | `64e1754` | status marks `[✓]/[!]/[X]` prefix case-list state |
+| P1-2 | `b180f43` | title age suffix `· Ns ago` (3 tests; plan: 2) |
+| P1-4 | `f205e8a` | `│ ` glyph on `Test Prompt` and `Agent output` |
+
+### Deviations from plan
+
+- **P0-2**: +1 test (`test_detail_disagreement_counts_duplicate_ratings`) for the 2-1-1 split case (per-rating count arithmetic).
+- **P0-6**: +1 test (`test_poll_subprocess_noop_when_proc_is_none`) for the early-return branch when `self._proc is None`.
+- **P0-7**: +1 test (`test_launch_run_omits_agent_b_when_file_missing`) for the file-existence guard.
+- **P1-1**: 2 new tests + 1 P1-6 test (`test_footer_hint_full_form_at_wide_width`) updated to match the new per-tab hint contract (the wide-form tokens changed from a flat list to per-tab hints).
+- **P1-2**: +1 test (`test_draw_title_omits_age_before_first_load`) for the `last_load > 0` guard.
+- **P1-4**: implementation also added a `Test Prompt` section to `_detail` (it was not previously rendered; the plan's wording assumed it was). The plan's stated test for the Test Prompt block would have failed otherwise.
+
+### Branch / merge history
+
+- `main` is currently at `82b6c5c` (Phase 1 merge).
+- `tui/enhancement` is at the same commit (post-Phase 1, no Phase 2 work yet).
+- Both phase merges used `--no-ff` so per-item commit history is preserved under the merge commit.
+- Golden baselines at `assets/screenshots/golden/*.png` have not changed (Phase 0 + Phase 1 are content-only; no screenshot regeneration).
+
+---
+
 ## 1. Current-State Matrix
 
 ### 1.1 Tabs and rendering functions
@@ -198,49 +249,49 @@ Each item: **title · files · risk · approval gate · change description · te
 
 ### Phase 0 — Pure observability / test-coverage (no behavior change)
 
-**P0-1 — Add draw-level boundary tests** *(files: `tests/test_tui_render.py` · risk: low · approval: none)*
+**P0-1 — Add draw-level boundary tests** *(files: `tests/test_tui_render.py` · risk: low · approval: none) · ✅ Merged at `aec68ee`*
 Add tests for the message strings and early-return path of `_draw` at `height<10`, `width<32`, exactly 32×10, and `width=39` (short tab names). Use a mocked `stdscr` (already available via `unittest.mock.MagicMock`).
 - Tests: `test_draw_too_small_height`, `test_draw_too_small_width`, `test_draw_short_tab_names_at_width_39`, `test_render_dispatches_all_four_tabs`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k "draw or render_dispatches or short_tab"`
 - Rollback: delete the new test functions; no production code change.
 
-**P0-2 — Test multi-judge disagreement in detail** *(files: `tests/test_tui_render.py` · risk: low · approval: none)*
+**P0-2 — Test multi-judge disagreement in detail** *(files: `tests/test_tui_render.py` · risk: low · approval: none) · ✅ Merged at `2e03f77`*
 Construct a Snapshot with 3 judgments on one case with mixed ratings (`Excellent`, `Strong`, `Weak`). Assert the "Judge disagreement detected:" block and per-rating counts.
 - Tests: `test_detail_shows_judge_disagreement_when_ratings_diverge`, `test_detail_no_disagreement_block_when_ratings_agree`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k disagreement`
 - Rollback: remove the two new tests.
 
-**P0-3 — Test overview manifest integrity WARNING branch** *(files: `tests/test_tui_render.py` · risk: low · approval: none)*
+**P0-3 — Test overview manifest integrity WARNING branch** *(files: `tests/test_tui_render.py` · risk: low · approval: none) · ✅ Merged at `2fae355`*
 Write a `manifest.json` whose `verify()` reports an issue (e.g. declare an entry with a wrong sha). Assert the WARNING line shows. Also test the `Manifest not yet present` line (gen == 0).
 - Tests: `test_overview_manifest_warning_when_verify_fails`, `test_overview_manifest_not_present_when_gen_zero`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k manifest`
 - Rollback: remove the two new tests.
 
-**P0-4 — Test scroll indicators in `_draw`** *(files: `tests/test_tui_render.py` · risk: low · approval: none)*
+**P0-4 — Test scroll indicators in `_draw`** *(files: `tests/test_tui_render.py` · risk: low · approval: none) · ✅ Merged at `da65a51`*
 Mock `stdscr` and capture `addnstr` calls. Construct a Snapshot with 50 cases on the Cases tab, scroll to the top, then to the bottom, and assert the `↑` and `↓` markers are emitted in the right rows.
 - Tests: `test_draw_scroll_indicator_at_top`, `test_draw_scroll_indicator_at_bottom`, `test_draw_no_indicator_when_fits`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k scroll_indicator`
 - Rollback: remove tests.
 
-**P0-5 — Test `_line_attr` quote-false-positive** *(files: `tests/test_tui_render.py` · risk: low · approval: none)*
+**P0-5 — Test `_line_attr` quote-false-positive** *(files: `tests/test_tui_render.py` · risk: low · approval: none) · ✅ Merged at `2f88e68`*
 Verify that a line such as `Judge said "Excellent" in the report` does not get the green pair (curses mock returning `color_pair` from `addnstr` calls). Confirms the boundary check works; documents the limitation that quoted ratings are not exempted.
 - Tests: `test_line_attr_quoted_rating_still_colored` (documenting the current behavior — *not* a behavior change, just a regression guard), `test_line_attr_gate_pass_colored`, `test_line_attr_gate_fail_colored`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k line_attr`
 - Rollback: remove tests.
 
-**P0-6 — Test `_poll_subprocess` rc != 0 with stderr log** *(files: `tests/test_tui_render.py` · risk: low · approval: none)*
+**P0-6 — Test `_poll_subprocess` rc != 0 with stderr log** *(files: `tests/test_tui_render.py` · risk: low · approval: none) · ✅ Merged at `0927614`*
 Use `_mock_popen` to set `poll.return_value = 1` and verify `_status_msg` contains the log file name. Also test the rc == 0 path (no log mention).
 - Tests: `test_poll_subprocess_nonzero_reports_log`, `test_poll_subprocess_zero_clears_proc`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k poll_subprocess`
 - Rollback: remove tests.
 
-**P0-7 — Test launch with `agent_b` present** *(files: `tests/test_tui_render.py` · risk: low · approval: none)*
+**P0-7 — Test launch with `agent_b` present** *(files: `tests/test_tui_render.py` · risk: low · approval: none) · ✅ Merged at `830bce0`*
 Construct an `agent_b` markdown file and assert the launched command includes `--agent-b`. Currently only single-agent paths are covered.
 - Tests: `test_launch_run_includes_agent_b_when_present`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k agent_b`
 - Rollback: remove test.
 
-**P0-8 — Test segmented `.b64.*` ZIP loading** *(files: `tests/test_tui_loading.py` · risk: low · approval: none)*
+**P0-8 — Test segmented `.b64.*` ZIP loading** *(files: `tests/test_tui_loading.py` · risk: low · approval: none) · ✅ Merged at `b50335a`*
 This is a loader behavior the TUI consumes, already partially covered. Add a test that creates `foo.zip.b64.0` and `foo.zip.b64.1` in `tmp_path` and asserts `load_snapshot` returns a valid Snapshot. Marked as a TUI-loading test because the TUI is the primary consumer.
 - Tests: `test_load_snapshot_reads_segmented_b64_zip`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_loading.py -k segmented`
@@ -248,37 +299,37 @@ This is a loader behavior the TUI consumes, already partially covered. Add a tes
 
 ### Phase 1 — Low-risk cosmetic / legibility improvements
 
-**P1-1 — Contextual footer hint per tab** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout)*
+**P1-1 — Contextual footer hint per tab** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout) · ✅ Merged at `f96a25f`*
 Define a small map `FOOTER_HINTS: dict[int, list[str]]` of "hints currently active" per tab index. The render function picks a set of hints joined with ` | `, truncated to width. Default: show the global hint set. Tab 1 (Cases) leads with `Enter open · e export`. Tab 2 (Detail) leads with `j/k scroll · h/l tab`. Output change is one line at `height-1`; no other region changes.
 - Tests: `test_footer_hint_context_for_cases_tab` (asserts the Cases footer contains "Enter"), `test_footer_hint_truncates_at_narrow_width` (asserts the line is at most `width` characters).
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k footer_hint`
 - Rollback: revert the single change to the footer branch of `_draw` (lines 159–162).
 
-**P1-2 — "Last loaded" indicator in the title** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible title)*
+**P1-2 — "Last loaded" indicator in the title** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible title) · ✅ Merged at `b180f43`*
 The title row already shows `BENCHDECK [status] PID:nnn`. Append a small `· 3s ago` style suffix when `self.last_load > 0`. Renders only inside the title row (row 0), which is the only row whose width budget is `>= 8` even at minimum 32-column. Compute the suffix lazily and only when there is horizontal room (`width >= 48`).
 - Tests: `test_draw_title_shows_last_loaded_age`, `test_draw_title_omits_age_when_narrow`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k last_loaded`
 - Rollback: revert the suffix append inside `_draw` (line 128 area).
 
-**P1-3 — "Cases: N total · M judged · K blocked" summary on the Cases tab header** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout)*
+**P1-3 — "Cases: N total · M judged · K blocked" summary on the Cases tab header** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout) · ✅ Merged at `7d610f7`*
 The Cases tab currently has a single-line header `"Cases"` (line 251). Replace with a one-line summary that includes total / judged / blocked counts. Truncates gracefully at narrow widths.
 - Tests: `test_case_list_header_includes_counts`, `test_case_list_header_truncates_at_minimum_width`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k case_list_header`
 - Rollback: revert the `_case_list` first-line change.
 
-**P1-4 — Visually distinguish code-ish output sections in Detail** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout)*
+**P1-4 — Visually distinguish code-ish output sections in Detail** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout) · ✅ Merged at `f205e8a`*
 Prefix wrapped lines of `Test Prompt` and `Agent Output` with a `│ ` glyph, in FG color pair 5 (cyan) and dim. The wrapper is `_section` (632–636). Add a small helper that yields `(glyph, text, attr)` triples for the renderer; the actual application can be done at the `_safe_add` level by changing the line content. This is a *content* change, not a curses attribute change. Outline characters survive `_safe_add` cleanly.
 - Tests: `test_detail_marks_test_prompt_block`, `test_detail_marks_agent_output_block`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k test_detail_marks`
 - Rollback: revert the helper and the two `_section`-call changes in `_detail`.
 
-**P1-5 — Number the case list rows and use the rating token's own color** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout)*
+**P1-5 — Number the case list rows and use the rating token's own color** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout) · ✅ Merged at `64e1754`*
 The case-list `state` segment (`"Strong[agent_a] Excellent[agent_b]"` etc., line 268) is currently a single string. Add a small post-processor in `_case_list` that splits on whitespace and tags each rating token for `_line_attr`; since the TUI's colorization is line-based, this is best done by adding a soft hyphen or by repeating the line with the relevant token in the foreground. Pragmatic compromise: add a single-character mark `[✓]` for `Excellent`/`Strong`, `[!]` for `Acceptable`/`Weak`, `[X]` for `Fail`/`BLOCKED`, then keep text in default color. This adds symbols, not colors, so it works on terminals without color.
 - Tests: `test_case_list_includes_status_marks_for_ratings`, `test_case_list_includes_status_marks_for_blocked`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k status_marks`
 - Rollback: remove the per-rating mark appended in `_case_list` (line 268 area).
 
-**P1-6 — Footer hint abbreviated at narrow widths** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout)*
+**P1-6 — Footer hint abbreviated at narrow widths** *(files: `src/benchdeck/tui.py` · risk: low · approval: required (visible layout) · ✅ Merged at `0e5e7af`*
 When `width < 56`, fall back to a 4-token hint: `1-4 tabs · j/k move · q quit`. This is a precondition for P1-1's hint map.
 - Tests: `test_footer_hint_short_form_at_narrow_width`, `test_footer_hint_full_form_at_wide_width`.
 - Validation: `python -m pytest -q -p no:cacheprovider tests/test_tui_render.py -k hint_short_form`
