@@ -224,6 +224,68 @@ def test_overview_omits_heartbeat_when_flag_disabled() -> None:
     assert "Run alive" not in joined
 
 
+# ── overview infra-error pointer (P2-6) ─────────────────────────────────────
+
+
+def test_overview_infra_error_pointer_when_present() -> None:
+    """With `enable_infra_pointer=True` and `infrastructure_failures > 0`,
+    `_overview` emits a 1-line `Infra failures: N (see Detail tab)`
+    pointer in the header. The pointer supplements (does not replace)
+    the always-on `Infra failures: N` summary in the base header."""
+    tui = _make_tui(
+        enable_infra_pointer=True,
+        snapshot=Snapshot(
+            metadata={
+                "cases_in_plan": 8,
+                "executions_judged": 0,
+                "infrastructure_failures": 2,
+                "token_usage": {},
+            },
+            tally={},
+        ),
+    )
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The pointer line must appear with the live count.
+    pointer_line = next(
+        line for line in lines if line.startswith("Infra failures:") and "see Detail" in line
+    )
+    assert pointer_line == "Infra failures: 2 (see Detail tab)"
+    # Sanity: the existing always-on summary in the base header is
+    # also still present (it lives on the `Policy blocks: N   Infra
+    # failures: N` line; the count "2" still appears in joined text).
+    assert "Infra failures: 2" in joined
+
+
+def test_overview_omits_pointer_when_zero() -> None:
+    """With `enable_infra_pointer=True` but `infrastructure_failures == 0`,
+    `_overview` does NOT emit the pointer line (nothing to point at).
+    The always-on `Infra failures: 0` summary in the base header is
+    still present and unchanged."""
+    tui = _make_tui(
+        enable_infra_pointer=True,
+        snapshot=Snapshot(
+            metadata={
+                "cases_in_plan": 8,
+                "executions_judged": 0,
+                "infrastructure_failures": 0,
+                "token_usage": {},
+            },
+            tally={},
+        ),
+    )
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The pointer line must NOT appear.
+    assert "see Detail" not in joined
+    assert not any(
+        line.startswith("Infra failures:") and "see Detail" in line for line in lines
+    )
+    # The always-on summary in the base header is still present and
+    # unchanged (it shows the count "0" because infra == 0).
+    assert "Infra failures: 0" in joined
+
+
 # ── help ────────────────────────────────────────────────────────────────────
 
 

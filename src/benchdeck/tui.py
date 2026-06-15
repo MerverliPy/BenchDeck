@@ -38,6 +38,7 @@ class BenchDeckTUI:
         model: str | None = None,
         judge_model: str | None = None,
         enable_heartbeat: bool = False,
+        enable_infra_pointer: bool = False,
     ) -> None:
         self.run_dir = run_dir
         self.refresh_seconds = refresh_seconds
@@ -63,6 +64,12 @@ class BenchDeckTUI:
         # subprocess is alive, a `Run alive: yes · Ns elapsed` line.
         # Defaults to False so the live TUI output is unchanged.
         self.enable_heartbeat = enable_heartbeat
+        # P2-6 (default-off): when True and `infrastructure_failures > 0`,
+        # _overview appends a 1-line `Infra failures: N (see Detail tab)`
+        # pointer to draw the user's attention to the per-case error
+        # details on the Detail tab. Defaults to False so the live
+        # TUI output is unchanged.
+        self.enable_infra_pointer = enable_infra_pointer
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -236,6 +243,15 @@ class BenchDeckTUI:
                 lines.append(f"  WARNING: planner terminal error: {msg}")
             if pc.get("parse_error"):
                 lines.append(f"  WARNING: planner parse error: {pc['parse_error']}")
+        # P2-6: infra-error pointer at the bottom of the Overview header.
+        # Gated by `enable_infra_pointer` (default False) and suppressed
+        # when `infra == 0` (nothing to point at). The pointer is a
+        # separate line from the always-on `Infra failures: N` summary
+        # that already lives in the base 4-line header — this one is a
+        # call-out that points the user to the Detail tab for per-case
+        # error details.
+        if self.enable_infra_pointer and infra > 0:
+            lines.append(f"Infra failures: {infra} (see Detail tab)")
         # P2-3: heartbeat lines at the bottom of the Overview header.
         # Gated by `enable_heartbeat` (default False). `last_load` is 0
         # before the first `load_snapshot` call, so the "Last refresh"
