@@ -1,6 +1,6 @@
 # BenchDeck TUI — Structured Enhancement Plan
 
-**Target:** `src/benchdeck/tui.py` (637 lines) and its test surface.
+**Target:** `src/benchdeck/tui.py` (783 lines as of post-P2-6) and its test surface.
 **Scope:** TUI rendering and behavior only. Out-of-scope: schema, runner, gateway, dependencies, CI, packaging, screenshot regeneration.
 **Method:** Read-only evidence gathering from current source and tests, then a phased, risk-graded plan. No edits performed.
 
@@ -8,17 +8,17 @@
 
 ## 0. Current Status
 
-**Branch:** `tui/enhancement` (at `82b6c5c`, same as `main`).
-**Last update:** post-Phase 1 merge (2026-06-14).
+**Branch:** `main` (at `0237de3`, 3 commits ahead of `origin/main`; `tui/enhancement` is stale at `747268e`).
+**Last update:** post-P2-6 commit (2026-06-15).
 
-| Phase | Status | Merged at | Tests added | Production lines |
+| Phase | Status | Latest commit | Tests added | Production lines |
 |---|---|---|---:|---:|
 | Phase 0 | ✅ Complete | `d72033d` | +21 | 0 |
 | Phase 1 | ✅ Complete | `82b6c5c` | +13 | ~+113 |
-| Phase 2 | ⏳ Not started | — | 0 | 0 |
+| Phase 2 | 🟡 In progress (2/6) | `0237de3` | +5 | +44 |
 | Phase 3 | ⏳ Not started | — | 0 | 0 |
 
-**Total so far:** 14 items implemented (8 P0 + 6 P1), 34 new tests, 0 to ~+113 production lines. All 144 TUI + screenshot tests pass; golden baselines unchanged.
+**Total so far:** 16 items implemented (8 P0 + 6 P1 + 2 P2), 39 new tests, 0 to ~+157 production lines. All 151 TUI + screenshot tests pass; golden baselines unchanged.
 
 ### Completed commits (in execution order)
 
@@ -38,6 +38,8 @@
 | P1-5 | `64e1754` | status marks `[✓]/[!]/[X]` prefix case-list state |
 | P1-2 | `b180f43` | title age suffix `· Ns ago` (3 tests; plan: 2) |
 | P1-4 | `f205e8a` | `│ ` glyph on `Test Prompt` and `Agent output` |
+| P2-3 | `28c52c8` | overview heartbeat — `Last refresh` + `Run alive` lines (3 tests; plan: 2) |
+| P2-6 | `0237de3` | infra-error pointer on Overview |
 
 ### Deviations from plan
 
@@ -47,13 +49,14 @@
 - **P1-1**: 2 new tests + 1 P1-6 test (`test_footer_hint_full_form_at_wide_width`) updated to match the new per-tab hint contract (the wide-form tokens changed from a flat list to per-tab hints).
 - **P1-2**: +1 test (`test_draw_title_omits_age_before_first_load`) for the `last_load > 0` guard.
 - **P1-4**: implementation also added a `Test Prompt` section to `_detail` (it was not previously rendered; the plan's wording assumed it was). The plan's stated test for the Test Prompt block would have failed otherwise.
+- **P2-3**: +1 test (`test_overview_omits_heartbeat_when_flag_disabled`) for the Phase 2 default-off contract guard. Asserts that with `enable_heartbeat=False` (the default), neither the `Last refresh` nor the `Run alive` line appears in `_overview`, even when `last_load > 0` and a subprocess is alive. This locks down the Phase 2 default-off guarantee and matches the P0/P1 pattern of adding regression guards for invariant branches.
 
 ### Branch / merge history
 
-- `main` is currently at `82b6c5c` (Phase 1 merge).
-- `tui/enhancement` is at the same commit (post-Phase 1, no Phase 2 work yet).
-- Both phase merges used `--no-ff` so per-item commit history is preserved under the merge commit.
-- Golden baselines at `assets/screenshots/golden/*.png` have not changed (Phase 0 + Phase 1 are content-only; no screenshot regeneration).
+- `main` is currently at `0237de3` (post-P2-6 commit; 3 ahead of `origin/main`).
+- `tui/enhancement` is stale at `747268e` (Phase 2 work has landed on `main` directly).
+- Phase 0 and Phase 1 merges used `--no-ff` so per-item commit history is preserved under the merge commit. Phase 2 items so far (P2-3, P2-6) are individual commits on `main` — no Phase 2 merge commit yet.
+- Golden baselines at `assets/screenshots/golden/*.png` have not changed (Phase 0 + Phase 1 + P2-3 + P2-6 are content-only and default-off; no screenshot regeneration).
 
 ---
 
