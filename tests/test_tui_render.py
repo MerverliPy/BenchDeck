@@ -6,6 +6,7 @@ No terminal required.
 
 from __future__ import annotations
 
+import curses
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -151,6 +152,137 @@ def test_overview_shows_planner_errors() -> None:
     lines = tui._overview(80)
     joined = "\n".join(lines)
     assert "test error" in joined
+
+
+# ── overview heartbeat (P2-3) ──────────────────────────────────────────────
+
+
+def test_overview_shows_last_refresh_age() -> None:
+    """With `enable_heartbeat=True` and `last_load > 0`, `_overview`
+    emits a `Last refresh: Ns ago` line in the header. This is the
+    default-off heartbeat: a separate test (the default-off contract
+    check) confirms the line is absent when the flag is False."""
+    tui = _make_tui(
+        enable_heartbeat=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+        last_load=time.monotonic() - 5,
+    )
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    assert "Last refresh:" in joined
+    assert "s ago" in joined
+    # The line carries a non-negative integer-second count.
+    refresh_line = next(line for line in lines if line.startswith("Last refresh:"))
+    # The format is `Last refresh: Ns ago` where N >= 0.
+    assert refresh_line.endswith("s ago")
+    suffix = refresh_line.removeprefix("Last refresh: ").removesuffix("s ago")
+    assert suffix.isdigit()
+    assert int(suffix) >= 0
+
+
+def test_overview_shows_subprocess_elapsed_when_running() -> None:
+    """With `enable_heartbeat=True` and a live subprocess (i.e.
+    `self._proc is not None` and `self._proc_started_at > 0`),
+    `_overview` emits a `Run alive: yes · Ns elapsed` line in the
+    header. The line is absent when the subprocess has not been
+    launched (the default state)."""
+    tui = _make_tui(
+        enable_heartbeat=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    # Simulate a launched-and-alive subprocess.
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._proc_started_at = time.monotonic() - 7
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    assert "Run alive: yes" in joined
+    assert "s elapsed" in joined
+    # The elapsed count is a non-negative integer.
+    run_line = next(line for line in lines if line.startswith("Run alive:"))
+    assert run_line.endswith("s elapsed")
+    suffix = run_line.removeprefix("Run alive: yes · ").removesuffix("s elapsed")
+    assert suffix.isdigit()
+    assert int(suffix) >= 0
+
+
+def test_overview_omits_heartbeat_when_flag_disabled() -> None:
+    """Default-off contract: when `enable_heartbeat=False` (the
+    default), neither the `Last refresh` nor the `Run alive` line
+    appears in `_overview`, even if `last_load > 0` and a subprocess
+    is alive. This guards the Phase 2 default-off feature flag."""
+    tui = _make_tui(
+        # enable_heartbeat defaults to False; not passed explicitly.
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+        last_load=time.monotonic() - 5,
+    )
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._proc_started_at = time.monotonic() - 7
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    assert "Last refresh" not in joined
+    assert "Run alive" not in joined
+
+
+# ── overview infra-error pointer (P2-6) ─────────────────────────────────────
+
+
+def test_overview_infra_error_pointer_when_present() -> None:
+    """With `enable_infra_pointer=True` and `infrastructure_failures > 0`,
+    `_overview` emits a 1-line `Infra failures: N (see Detail tab)`
+    pointer in the header. The pointer supplements (does not replace)
+    the always-on `Infra failures: N` summary in the base header."""
+    tui = _make_tui(
+        enable_infra_pointer=True,
+        snapshot=Snapshot(
+            metadata={
+                "cases_in_plan": 8,
+                "executions_judged": 0,
+                "infrastructure_failures": 2,
+                "token_usage": {},
+            },
+            tally={},
+        ),
+    )
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The pointer line must appear with the live count.
+    pointer_line = next(
+        line for line in lines if line.startswith("Infra failures:") and "see Detail" in line
+    )
+    assert pointer_line == "Infra failures: 2 (see Detail tab)"
+    # Sanity: the existing always-on summary in the base header is
+    # also still present (it lives on the `Policy blocks: N   Infra
+    # failures: N` line; the count "2" still appears in joined text).
+    assert "Infra failures: 2" in joined
+
+
+def test_overview_omits_pointer_when_zero() -> None:
+    """With `enable_infra_pointer=True` but `infrastructure_failures == 0`,
+    `_overview` does NOT emit the pointer line (nothing to point at).
+    The always-on `Infra failures: 0` summary in the base header is
+    still present and unchanged."""
+    tui = _make_tui(
+        enable_infra_pointer=True,
+        snapshot=Snapshot(
+            metadata={
+                "cases_in_plan": 8,
+                "executions_judged": 0,
+                "infrastructure_failures": 0,
+                "token_usage": {},
+            },
+            tally={},
+        ),
+    )
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The pointer line must NOT appear.
+    assert "see Detail" not in joined
+    assert not any(line.startswith("Infra failures:") and "see Detail" in line for line in lines)
+    # The always-on summary in the base header is still present and
+    # unchanged (it shows the count "0" because infra == 0).
+    assert "Infra failures: 0" in joined
 
 
 # ── help ────────────────────────────────────────────────────────────────────
@@ -807,11 +939,7 @@ def test_draw_scroll_indicator_at_top(make_fake_stdscr: Any) -> None:
         scroll=0,
         selected=0,
         snapshot=Snapshot(
-            plan={
-                "cases": [
-                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
-                ]
-            },
+            plan={"cases": [{"id": i, "title": f"Case {i}"} for i in range(1, 51)]},
         ),
     )
     stdscr = make_fake_stdscr(24, 80)
@@ -838,11 +966,7 @@ def test_draw_scroll_indicator_at_bottom(make_fake_stdscr: Any) -> None:
         # to the maximum position (49 - 20 + 2 = 31 = max_scroll).
         selected=49,
         snapshot=Snapshot(
-            plan={
-                "cases": [
-                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
-                ]
-            },
+            plan={"cases": [{"id": i, "title": f"Case {i}"} for i in range(1, 51)]},
         ),
     )
     stdscr = make_fake_stdscr(24, 80)
@@ -898,6 +1022,7 @@ def test_line_attr_quoted_rating_not_colored() -> None:
 
 def test_line_attr_gate_pass_colored() -> None:
     """A line containing both 'Pass' and 'Gate' is colored (green pair)."""
+
     # Patch `curses.color_pair` to return a deterministic per-pair value
     # so we can both confirm the gate branch was hit and that the
     # resulting attribute is non-zero (i.e., the line is colored).
@@ -1441,3 +1566,541 @@ def test_detail_marks_agent_output_block() -> None:
     # The title line itself is NOT prefixed.
     title_line = next(line for line in lines if line == "Agent output")
     assert "│ " not in title_line
+
+
+# ── case list filter & sort (P2-1) ──────────────────────────────────────────
+
+
+def test_case_list_filter_by_family() -> None:
+    """With `enable_case_filter=True` and `self._filter = "family:edge_case_logic"`,
+    `_case_list` only shows cases whose `family` field matches. The
+    header reflects the filtered count and the total."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Edge 1", "family": "edge_case_logic"},
+                    {"id": 2, "title": "Happy 1", "family": "happy_path"},
+                    {"id": 3, "title": "Edge 2", "family": "edge_case_logic"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    tui._filter = "family:edge_case_logic"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # The two edge cases appear; the happy case does not.
+    assert "Edge 1" in joined
+    assert "Edge 2" in joined
+    assert "Happy 1" not in joined
+    # Header reflects filtered count out of total.
+    assert "2 of 3 total" in lines[0]
+    # Sort is "id" (the default), so no `sort:…` suffix.
+    assert "sort:" not in lines[0]
+
+
+def test_case_list_filter_by_state_blocked() -> None:
+    """With `self._filter = "state:BLOCKED"`, only blocked cases are
+    visible. The other states (judged, pending) are filtered out."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Judged Case"},
+                    {"id": 2, "title": "Blocked Case"},
+                    {"id": 3, "title": "Pending Case"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                }
+            ],
+            policy_blocks=[{"case_id": 2, "agent_label": "agent_a"}],
+        ),
+    )
+    tui._filter = "state:BLOCKED"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # Only the blocked case is visible.
+    assert "Blocked Case" in joined
+    assert "Judged Case" not in joined
+    assert "Pending Case" not in joined
+    # Header counts: 1 of 3 total, 0 judged, 1 blocked.
+    assert "1 of 3 total" in lines[0]
+    assert "0 judged" in lines[0]
+    assert "1 blocked" in lines[0]
+
+
+def test_case_list_sort_by_family() -> None:
+    """With `self._sort = "family"`, cases are ordered by family
+    (alphabetical, case-insensitive) then by case id. The header
+    carries a `sort:family` suffix."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Z case", "family": "zebra"},
+                    {"id": 2, "title": "A case", "family": "alpha"},
+                    {"id": 3, "title": "M case", "family": "mango"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    tui._sort = "family"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # Family order: alpha < mango < zebra → case 2, case 3, case 1.
+    pos_a = joined.find("A case")
+    pos_m = joined.find("M case")
+    pos_z = joined.find("Z case")
+    assert pos_a != -1 and pos_m != -1 and pos_z != -1
+    assert pos_a < pos_m < pos_z
+    # Header carries sort:family.
+    assert "sort:family" in lines[0]
+
+
+def test_case_list_filter_clears_status_on_escape() -> None:
+    """When the filter prompt is open, pressing Esc restores the
+    prior filter (the draft is discarded), closes the prompt, and
+    sets a status message indicating the prompt was cancelled. The
+    case list is unchanged from its prior filtered state."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        tab=1,
+        snapshot=Snapshot(plan={"cases": [{"id": 1, "title": "Only Case"}]}),
+    )
+    tui._filter = ""  # start with no filter
+    # Open the filter prompt.
+    tui._handle_key(ord("f"))
+    assert tui._filter_mode is True
+    # Type some text into the draft.
+    tui._handle_key(ord("a"))
+    tui._handle_key(ord("b"))
+    assert tui._filter_draft == "ab"
+    # Press Esc.
+    tui._handle_key(27)
+    # The prompt is closed; the prior filter is restored.
+    assert tui._filter_mode is False
+    assert tui._filter == ""
+    assert tui._filter_draft == ""
+    # A status message indicates the prompt was cancelled.
+    assert "cancel" in tui._status_msg.lower()
+
+
+def test_case_list_selected_clamps_after_filter() -> None:
+    """After applying a filter that reduces the visible list below
+    `self.selected`, `_case_list` re-clamps `self.selected` to the
+    new length so the `>` marker remains on a valid (visible) row."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=5,  # far past the end of the unfiltered list
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Edge 1", "family": "edge_case_logic"},
+                    {"id": 2, "title": "Happy 1", "family": "happy_path"},
+                    {"id": 3, "title": "Edge 2", "family": "edge_case_logic"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    tui._filter = "family:edge_case_logic"  # reduces to 2 cases
+    lines = tui._case_list(80)
+    # After clamping, self.selected points at the last visible case.
+    assert tui.selected == 1
+    # The `>` marker is on the last case row (the clamped selected).
+    assert any(line.startswith(">") for line in lines[1:])
+    assert lines[-1].startswith(">")
+    # Only the 2 filtered cases are visible (no Happy 1).
+    joined = "\n".join(lines)
+    assert "Happy 1" not in joined
+
+
+def test_case_list_default_off_omits_filter_and_sort() -> None:
+    """Default-off contract: when `enable_case_filter=False` (the
+    default), `self._filter` and `self._sort` are ignored by
+    `_case_list` and the `f` / `s` keys are no-ops in `_handle_key`.
+    This locks down the Phase 2 default-off guarantee for the
+    case-list feature."""
+    tui = _make_tui(
+        # enable_case_filter defaults to False; not passed.
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Edge", "family": "edge_case_logic"},
+                    {"id": 2, "title": "Happy", "family": "happy_path"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    # If the flag were on, the filter would restrict to "Edge" and
+    # the sort would reorder. With the flag off, both are ignored.
+    tui._filter = "family:edge_case_logic"
+    tui._sort = "family"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # Both cases are visible (no filter applied).
+    assert "Edge" in joined
+    assert "Happy" in joined
+    # Header is the original unfiltered form.
+    assert " of " not in lines[0]
+    assert lines[0] == "Cases: 2 total · 0 judged · 0 blocked"
+    # The `f` and `s` keys are no-ops when the flag is off. The
+    # filter prompt does not open, and the sort is not cycled
+    # (whatever value the caller set is preserved).
+    tui.tab = 1
+    tui._handle_key(ord("f"))
+    assert tui._filter_mode is False
+    tui._handle_key(ord("s"))
+    # The sort is unchanged from what the caller set — the `s`
+    # keypress was ignored because the flag is off.
+    assert tui._sort == "family"
+
+
+# ── overview live log tail (P2-2) ──────────────────────────────────────────
+
+
+def test_overview_includes_subprocess_log_tail_when_running(
+    tmp_path: Path,
+) -> None:
+    """With `enable_log_tail=True` and a live subprocess, `_overview`
+    appends a `Subprocess log (last N of M lines, X bytes):` section
+    showing the tail of the captured stderr log file. Only the last
+    8 lines are shown even when the log has more."""
+    log_path = tmp_path / "benchdeck_20260615T120000Z.log"
+    log_lines = [f"line {i:02d}: some output" for i in range(1, 21)]  # 20 lines
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    tui = _make_tui(
+        enable_log_tail=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    # Simulate a launched-and-alive subprocess with a stderr log file.
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._stderr_log = log_path
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The section header is present with the captured line count
+    # and the file size.
+    assert "Subprocess log" in joined
+    assert "20 lines" in joined  # total captured line count
+    assert "last 8 of" in joined
+    # The tail shows lines 13-20 (the last 8 of 20).
+    assert "line 13: some output" in joined
+    assert "line 20: some output" in joined
+    # Earlier lines are NOT shown.
+    assert "line 01: some output" not in joined
+    assert "line 12: some output" not in joined
+
+
+def test_overview_omits_log_tail_when_idle() -> None:
+    """With `enable_log_tail=True` but no live subprocess (i.e.
+    `self._proc is None`), `_overview` does NOT include the log
+    tail section. The section is suppressed because there is no
+    active run to tail, even if a stale `_stderr_log` path is set."""
+    tui = _make_tui(
+        enable_log_tail=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    # Idle state: no proc, no stderr log.
+    assert tui._proc is None
+    assert tui._stderr_log is None
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The section is absent.
+    assert "Subprocess log" not in joined
+
+
+def test_overview_default_off_omits_log_tail(tmp_path: Path) -> None:
+    """Default-off contract: when `enable_log_tail=False` (the
+    default), the `Subprocess log` section does NOT appear in
+    `_overview`, even if a subprocess is alive and a stderr log
+    file exists with content. This locks down the Phase 2
+    default-off guarantee."""
+    log_path = tmp_path / "should_not_be_read.log"
+    log_path.write_text("line 1\nline 2\n", encoding="utf-8")
+    tui = _make_tui(
+        # enable_log_tail defaults to False; not passed.
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._stderr_log = log_path
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The section is absent even though the proc is alive and the
+    # log file has content.
+    assert "Subprocess log" not in joined
+    # The log file was not read or modified.
+    assert log_path.read_text(encoding="utf-8") == "line 1\nline 2\n"
+
+
+# ── case list multi-select for batch export (P2-5) ──────────────────────────
+
+
+def test_case_list_space_toggles_mark() -> None:
+    """With `enable_batch_export=True` and `tab=1`, pressing `space`
+    on the Cases tab toggles the current case's mark (i.e. adds the
+    case ID to `self._marked` if absent, removes it if present).
+    The rendered case list shows a leading `*` on marked rows."""
+    tui = _make_tui(
+        enable_batch_export=True,
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "First Case"},
+                    {"id": 2, "title": "Second Case"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    # Initially, no marks.
+    assert tui._marked == set()
+    # Press space on case 1 → marked.
+    tui._handle_key(ord(" "))
+    assert tui._marked == {1}
+    # Press space again on case 1 → unmarked.
+    tui._handle_key(ord(" "))
+    assert tui._marked == set()
+    # Move to case 2 and mark it.
+    tui.selected = 1
+    tui._handle_key(ord(" "))
+    assert tui._marked == {2}
+    # Mark case 1 too; both are now marked.
+    tui.selected = 0
+    tui._handle_key(ord(" "))
+    assert tui._marked == {1, 2}
+    # The rendered list shows a `*` on marked rows (column 0).
+    lines = tui._case_list(80)
+    marked_rows = [line for line in lines[1:] if line.startswith("*")]
+    assert len(marked_rows) == 2
+
+
+def test_export_marked_writes_combined_markdown(tmp_path: Path) -> None:
+    """With `enable_batch_export=True` and at least one case in
+    `self._marked`, pressing `E` on the Cases tab exports all
+    marked cases to a single `cases_<ts>.md` file in `run_dir`.
+    The combined file has a `## Case N: Title` section per case
+    and a file-level header. The `_marked` set is cleared after
+    a successful export (marks are one-shot)."""
+    tui = BenchDeckTUI(tmp_path, enable_batch_export=True)
+    tui.snapshot = Snapshot(
+        plan={
+            "cases": [
+                {
+                    "id": 1,
+                    "title": "First Exported",
+                    "family": "happy_path",
+                    "purpose": "first test",
+                    "test_prompt": "do first",
+                },
+                {
+                    "id": 2,
+                    "title": "Second Exported",
+                    "family": "edge_case_logic",
+                    "purpose": "second test",
+                    "test_prompt": "do second",
+                },
+            ]
+        },
+        judgments=[],
+        results={},
+    )
+    tui.tab = 1  # Cases tab — required for the `E` keypress
+    tui.selected = 0
+    tui._marked = {1, 2}
+    tui._handle_key(ord("E"))
+    # A combined export file is written.
+    exported = list(tmp_path.glob("cases_*.md"))
+    assert len(exported) == 1
+    content = exported[0].read_text(encoding="utf-8")
+    # The file-level header reports the count.
+    assert "Exported Cases (2 marked)" in content
+    # Both case sections are present.
+    assert "## Case 1: First Exported" in content
+    assert "## Case 2: Second Exported" in content
+    assert "do first" in content
+    assert "do second" in content
+    # The marks are cleared after a successful export.
+    assert tui._marked == set()
+    # The status message confirms the export.
+    assert "Exported 2 cases" in tui._status_msg
+
+
+def test_export_marked_empty_writes_nothing(tmp_path: Path) -> None:
+    """With `enable_batch_export=True` but `self._marked` empty,
+    pressing `E` on the Cases tab does NOT write any file. A
+    status message indicates nothing was exported."""
+    tui = BenchDeckTUI(tmp_path, enable_batch_export=True)
+    tui.snapshot = Snapshot(
+        plan={
+            "cases": [
+                {
+                    "id": 1,
+                    "title": "Unmarked Case",
+                    "family": "happy_path",
+                    "purpose": "test",
+                    "test_prompt": "do",
+                }
+            ]
+        },
+        judgments=[],
+        results={},
+    )
+    tui.tab = 1  # Cases tab — required for the `E` keypress
+    tui.selected = 0
+    tui._marked = set()  # no marks
+    tui._handle_key(ord("E"))
+    # No file is written.
+    exported = list(tmp_path.glob("cases_*.md"))
+    assert len(exported) == 0
+    # A status message indicates nothing was exported.
+    assert "No marked cases" in tui._status_msg
+
+
+def test_case_list_default_off_omits_mark() -> None:
+    """Default-off contract: when `enable_batch_export=False` (the
+    default), the `space` key does NOT toggle a mark, `E` does NOT
+    export, and the case list shows no `*` prefix. The existing
+    single-case `e` export is preserved as a shortcut for the
+    current case. This locks down the Phase 2 default-off
+    guarantee for the batch-export feature."""
+    tui = _make_tui(
+        # enable_batch_export defaults to False; not passed.
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Case 1"},
+                    {"id": 2, "title": "Case 2"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    # Pre-set the marks set to a non-empty value to verify the
+    # default-off path ignores the field entirely.
+    tui._marked = {1}
+    # Press space — no mark toggle.
+    tui._handle_key(ord(" "))
+    # The marks are unchanged.
+    assert tui._marked == {1}
+    # Press E — no export.
+    tui._handle_key(ord("E"))
+    # The marks are unchanged.
+    assert tui._marked == {1}
+    # The case list shows no `*` prefix (the `*` column is gated off).
+    lines = tui._case_list(80)
+    assert not any(line.startswith("*") for line in lines[1:])
+
+
+# ── _init_colors theme stub (P2-4) ──────────────────────────────────────────
+
+
+def test_init_colors_respects_no_color_env(monkeypatch: Any) -> None:
+    """When `theme="auto"` (the default) and the `NO_COLOR` env var
+    is set to any non-empty value, `_init_colors` returns False
+    without initializing any color pairs. Honors
+    https://no-color.org/: any non-empty NO_COLOR value disables
+    color output."""
+    monkeypatch.setenv("NO_COLOR", "1")
+    tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
+        result = tui._init_colors()
+    # Returns False (no color).
+    assert result is False
+    # No init_pair calls were made.
+    assert mock_init_pair.call_count == 0
+
+
+def test_init_colors_light_theme_swaps_pair_6() -> None:
+    """When `theme="light"`, pair 6 is initialized with `COLOR_BLACK`
+    on `COLOR_WHITE` (a header band visible on light-terminal
+    backgrounds). All other pairs (1-5) are unchanged from the
+    default dark palette (foreground rating color on
+    `COLOR_BLACK` background)."""
+    tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="light")
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
+        result = tui._init_colors()
+    assert result is True
+    # Pair 6 was initialized with BLACK on WHITE.
+    pair_6_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == 6)
+    assert pair_6_call[0][1] == curses.COLOR_BLACK
+    assert pair_6_call[0][2] == curses.COLOR_WHITE
+    # Pairs 1-5 retain BLACK backgrounds.
+    for pair_id in (1, 2, 3, 4, 5):
+        pair_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == pair_id)
+        assert pair_call[0][2] == curses.COLOR_BLACK
+
+
+def test_init_colors_dark_theme_unchanged() -> None:
+    """When `theme="dark"`, the palette is byte-identical to the
+    default ("auto" with no NO_COLOR): pair 6 is `COLOR_BLACK` on
+    `COLOR_CYAN`. The "dark" theme is an explicit declaration of
+    the default dark-mode palette and serves as documentation for
+    callers who want to override the auto-detection."""
+    tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="dark")
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
+        result = tui._init_colors()
+    assert result is True
+    # Pair 6 is BLACK on CYAN (the current default).
+    pair_6_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == 6)
+    assert pair_6_call[0][1] == curses.COLOR_BLACK
+    assert pair_6_call[0][2] == curses.COLOR_CYAN
+
+
+def test_init_colors_default_auto_preserves_current_palette(
+    monkeypatch: Any,
+) -> None:
+    """Default-off contract: with `theme="auto"` (the default) and
+    no `NO_COLOR` env var, the palette is identical to the
+    pre-P2-4 default (pair 6 = BLACK on CYAN, all rating colors on
+    BLACK backgrounds). This locks down the Phase 2 default-off
+    guarantee for the theme feature — the live TUI invocation is
+    provably unchanged."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
+        result = tui._init_colors()
+    assert result is True
+    # Pair 6 is BLACK on CYAN (the pre-P2-4 default).
+    pair_6_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == 6)
+    assert pair_6_call[0][1] == curses.COLOR_BLACK
+    assert pair_6_call[0][2] == curses.COLOR_CYAN
+    # All 6 pairs are initialized.
+    pair_ids = sorted(c[0][0] for c in mock_init_pair.call_args_list)
+    assert pair_ids == [1, 2, 3, 4, 5, 6]
