@@ -486,8 +486,13 @@ class BenchDeckTUI:
         # sort. The selected index is re-clamped to the new visible
         # length. When the flag is False (the default), the original
         # header format and ordering are preserved verbatim.
+        # `visible` is always a list (initialized empty; the P2-1
+        # branch appends to it). The path choice below uses
+        # `self.enable_case_filter` directly, so we never need a None
+        # sentinel — this keeps the type annotation clean and the
+        # mypy strict-mode check happy.
+        visible: list[tuple[dict[str, Any], str]] = []
         if self.enable_case_filter:
-            visible: list[tuple[dict[str, Any], str]] = []
             for case in cases:
                 cid = case.get("id")
                 if not isinstance(cid, int):
@@ -524,14 +529,13 @@ class BenchDeckTUI:
                 header += f" · sort:{self._sort}"
         else:
             header = f"Cases: {total} total · {judged} judged · {blocked} blocked"
-            visible = None  # signal: use the original loop below
         if len(header) > width:
             # Truncate to width chars; the curses display will further
             # clip to width-1 visible cells. The header still begins
             # with "Cases: N total …" so the meaning is preserved.
             header = header[:width]
         lines = [header]
-        if visible is None:
+        if not self.enable_case_filter:
             # Original rendering path (gated off by `enable_case_filter`).
             for index, case in enumerate(cases):
                 case_id = case.get("id")
