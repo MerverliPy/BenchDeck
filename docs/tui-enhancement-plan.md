@@ -1,6 +1,6 @@
 # BenchDeck TUI — Structured Enhancement Plan
 
-**Target:** `src/benchdeck/tui.py` (1175 lines as of post-P2-5) and its test surface.
+**Target:** `src/benchdeck/tui.py` (1200 lines as of post-P2-4) and its test surface.
 **Scope:** TUI rendering and behavior only. Out-of-scope: schema, runner, gateway, dependencies, CI, packaging, screenshot regeneration.
 **Method:** Read-only evidence gathering from current source and tests, then a phased, risk-graded plan. No edits performed.
 
@@ -8,17 +8,17 @@
 
 ## 0. Current Status
 
-**Branch:** `main` (at `d4a21b4`, 6 commits ahead of `origin/main`; `tui/enhancement` is stale at `747268e`).
-**Last update:** post-P2-5 commit (2026-06-15).
+**Branch:** `main` (at `e3f1a93`, 7 commits ahead of `origin/main`; `tui/enhancement` is stale at `747268e`).
+**Last update:** post-P2-4 commit (2026-06-15). **Phase 2 is complete (6/6).**
 
 | Phase | Status | Latest commit | Tests added | Production lines |
 |---|---|---|---:|---:|
 | Phase 0 | ✅ Complete | `d72033d` | +21 | 0 |
 | Phase 1 | ✅ Complete | `82b6c5c` | +13 | ~+113 |
-| Phase 2 | 🟡 In progress (5/6) | `d4a21b4` | +18 | +436 |
+| Phase 2 | ✅ Complete (6/6, no merge commit) | `e3f1a93` | +22 | +464 |
 | Phase 3 | ⏳ Not started | — | 0 | 0 |
 
-**Total so far:** 19 items implemented (8 P0 + 6 P1 + 5 P2), 52 new tests, 0 to ~+549 production lines. All 164 TUI + screenshot tests pass; golden baselines unchanged.
+**Total so far:** 20 items implemented (8 P0 + 6 P1 + 6 P2), 56 new tests, 0 to ~+577 production lines. All 168 TUI + screenshot tests pass; golden baselines unchanged.
 
 ### Completed commits (in execution order)
 
@@ -43,6 +43,7 @@
 | P2-1 | `5398541` | filter & sort on the Cases tab (6 tests; plan: 5) |
 | P2-2 | `deb5af1` | live stderr-log tail on Overview (3 tests; plan: 2) |
 | P2-5 | `d4a21b4` | multi-select for batch export on the Cases tab (4 tests; plan: 3) |
+| P2-4 | `e3f1a93` | `NO_COLOR` + theme stub (palette selectable at construction time) (4 tests; plan: 3) |
 
 ### Deviations from plan
 
@@ -56,13 +57,15 @@
 - **P2-1**: +1 test (`test_case_list_default_off_omits_filter_and_sort`) for the Phase 2 default-off contract guard. Asserts that with `enable_case_filter=False` (the default), `_case_list` ignores `_filter` and `_sort` and that the `f` / `s` keys are no-ops in `_handle_key`. The plan's "three new keybindings" wording is interpreted as two genuinely new keys (`f` to open the filter prompt, `s` to cycle sort) plus the transient use of existing `Enter` (apply) and `Esc` (cancel) inside the prompt — no third new keybinding is added. This matches the P0/P1 pattern of adding regression guards for invariant branches.
 - **P2-2**: +1 test (`test_overview_default_off_omits_log_tail`) for the Phase 2 default-off contract guard. Asserts that with `enable_log_tail=False` (the default), the `Subprocess log` section does NOT appear in `_overview`, even if a subprocess is alive and a stderr log file exists with content. The plan text says "~16 lines" but the implementation uses 8 lines per the Q3 accepted default. This matches the P0/P1 pattern of adding regression guards for invariant branches.
 - **P2-5**: +1 test (`test_case_list_default_off_omits_mark`) for the Phase 2 default-off contract guard. Asserts that with `enable_batch_export=False` (the default), the `space` and `E` keys are no-ops in `_handle_key` and the case list shows no `*` prefix. The plan does not specify whether marks should persist after a successful export; the implementation uses one-shot semantics (marks are cleared on success) so a second `E` press does not re-export the same set. Mid-implementation issues: (1) the first draft of the `*` column always added a column (using `" "` for unmarked rows), which shifted the `>` marker from column 0 to column 1, breaking the existing `test_case_list_selected_clamps_after_filter` assertion — fixed by gating the column on `enable_batch_export` so the default-off path is byte-identical to the original; (2) the first draft of the two export tests did not set `tui.tab = 1`, so the `E` keypress (gated by `tab == 1`) was a no-op — fixed by setting the tab in both tests.
+- **P2-4**: +1 test (`test_init_colors_default_auto_preserves_current_palette`) for the Phase 2 default-off contract guard. Asserts that with `theme="auto"` (the default) and no `NO_COLOR` env var, the palette is byte-identical to the pre-P2-4 default (pair 6 = BLACK on CYAN). The plan text says "WHITE on BLACK for dark" but the test name `test_init_colors_dark_theme_unchanged` and the Q6 default (which only specifies the "light" swap) imply that "dark" should preserve the current default; the implementation follows the test name and Q6, not the plan text. `_init_colors` is refactored from `@staticmethod` to instance method so it can read `self.theme`; the call site in `_main` is unchanged because the new method takes no args other than `self`. This matches the P0/P1 pattern of adding regression guards for invariant branches.
+- **Phase 2 commit pattern**: Phase 2 items (P2-3, P2-6, P2-1, P2-2, P2-5, P2-4) landed as individual commits on `main` rather than being merged from a `tui/enhancement` branch with `--no-ff` (the Phase 0/1 pattern). The "Latest commit" column for Phase 2 therefore shows the SHA of the last individual item (P2-4 = `e3f1a93`), not a phase-level merge SHA. Per-item atomicity and review discipline are preserved; only the merge ceremony differs.
 
 ### Branch / merge history
 
-- `main` is currently at `d4a21b4` (post-P2-5 commit; 6 ahead of `origin/main`).
+- `main` is currently at `e3f1a93` (post-P2-4 commit; 7 ahead of `origin/main`).
 - `tui/enhancement` is stale at `747268e` (Phase 2 work has landed on `main` directly).
-- Phase 0 and Phase 1 merges used `--no-ff` so per-item commit history is preserved under the merge commit. Phase 2 items so far (P2-3, P2-6, P2-1, P2-2, P2-5) are individual commits on `main` — no Phase 2 merge commit yet.
-- Golden baselines at `assets/screenshots/golden/*.png` have not changed (Phase 0 + Phase 1 + P2-3 + P2-6 + P2-1 + P2-2 + P2-5 are content-only and default-off; no screenshot regeneration).
+- Phase 0 and Phase 1 used `--no-ff` merge commits to formalize phase boundaries. Phase 2 was executed as six individual commits on `main` (P2-3, P2-6, P2-1, P2-2, P2-5, P2-4) without a phase-level merge commit. Per-item atomicity is preserved; the merge ceremony is dropped for Phase 2 to keep the per-item review discipline tight.
+- Golden baselines at `assets/screenshots/golden/*.png` have not changed (Phase 0 + Phase 1 + Phase 2 are content-only and default-off; no screenshot regeneration).
 
 ---
 
