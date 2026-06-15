@@ -1779,3 +1779,81 @@ def test_case_list_default_off_omits_filter_and_sort() -> None:
     # The sort is unchanged from what the caller set — the `s`
     # keypress was ignored because the flag is off.
     assert tui._sort == "family"
+
+
+# ── overview live log tail (P2-2) ──────────────────────────────────────────
+
+
+def test_overview_includes_subprocess_log_tail_when_running(
+    tmp_path: Path,
+) -> None:
+    """With `enable_log_tail=True` and a live subprocess, `_overview`
+    appends a `Subprocess log (last N of M lines, X bytes):` section
+    showing the tail of the captured stderr log file. Only the last
+    8 lines are shown even when the log has more."""
+    log_path = tmp_path / "benchdeck_20260615T120000Z.log"
+    log_lines = [f"line {i:02d}: some output" for i in range(1, 21)]  # 20 lines
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    tui = _make_tui(
+        enable_log_tail=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    # Simulate a launched-and-alive subprocess with a stderr log file.
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._stderr_log = log_path
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The section header is present with the captured line count
+    # and the file size.
+    assert "Subprocess log" in joined
+    assert "20 lines" in joined  # total captured line count
+    assert "last 8 of" in joined
+    # The tail shows lines 13-20 (the last 8 of 20).
+    assert "line 13: some output" in joined
+    assert "line 20: some output" in joined
+    # Earlier lines are NOT shown.
+    assert "line 01: some output" not in joined
+    assert "line 12: some output" not in joined
+
+
+def test_overview_omits_log_tail_when_idle() -> None:
+    """With `enable_log_tail=True` but no live subprocess (i.e.
+    `self._proc is None`), `_overview` does NOT include the log
+    tail section. The section is suppressed because there is no
+    active run to tail, even if a stale `_stderr_log` path is set."""
+    tui = _make_tui(
+        enable_log_tail=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    # Idle state: no proc, no stderr log.
+    assert tui._proc is None
+    assert tui._stderr_log is None
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The section is absent.
+    assert "Subprocess log" not in joined
+
+
+def test_overview_default_off_omits_log_tail(tmp_path: Path) -> None:
+    """Default-off contract: when `enable_log_tail=False` (the
+    default), the `Subprocess log` section does NOT appear in
+    `_overview`, even if a subprocess is alive and a stderr log
+    file exists with content. This locks down the Phase 2
+    default-off guarantee."""
+    log_path = tmp_path / "should_not_be_read.log"
+    log_path.write_text("line 1\nline 2\n", encoding="utf-8")
+    tui = _make_tui(
+        # enable_log_tail defaults to False; not passed.
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._stderr_log = log_path
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    # The section is absent even though the proc is alive and the
+    # log file has content.
+    assert "Subprocess log" not in joined
+    # The log file was not read or modified.
+    assert log_path.read_text(encoding="utf-8") == "line 1\nline 2\n"

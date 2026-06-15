@@ -40,6 +40,7 @@ class BenchDeckTUI:
         enable_heartbeat: bool = False,
         enable_infra_pointer: bool = False,
         enable_case_filter: bool = False,
+        enable_log_tail: bool = False,
     ) -> None:
         self.run_dir = run_dir
         self.refresh_seconds = refresh_seconds
@@ -82,6 +83,13 @@ class BenchDeckTUI:
         self._sort: str = "id"
         self._filter_mode: bool = False
         self._filter_draft: str = ""
+        # P2-2 (default-off): when True and a subprocess is alive,
+        # `_overview` appends a `Subprocess log (last N of M lines):`
+        # section showing the tail of the captured stderr log file.
+        # The read is capped at 4 KiB from the end; the displayed
+        # tail is the last 8 lines. Defaults to False so the live
+        # TUI output is unchanged.
+        self.enable_log_tail = enable_log_tail
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -355,6 +363,41 @@ class BenchDeckTUI:
         else:
             lines.append("Manifest: not yet present")
         lines.append("")
+        # P2-2 (default-off): live stderr-log tail. When a subprocess
+        # is alive (self._proc is not None) and the captured log file
+        # exists, read up to 4 KiB from the end and display the last
+        # 8 lines. The section header reports the captured line count
+        # and the file size in bytes. The flag defaults to False so
+        # the live TUI output is unchanged. I/O is bounded by
+        # Path.read_text() and the 4 KiB cap.
+        if (
+            self.enable_log_tail
+            and self._proc is not None
+            and self._stderr_log is not None
+            and self._stderr_log.exists()
+        ):
+            try:
+                size_bytes = self._stderr_log.stat().st_size
+            except OSError:
+                size_bytes = 0
+            text = ""
+            if size_bytes > 0:
+                try:
+                    text = self._stderr_log.read_text(
+                        encoding="utf-8", errors="replace"
+                    )
+                except OSError:
+                    text = ""
+            if len(text) > 4096:
+                text = text[-4096:]
+            all_lines = text.splitlines()
+            line_count = len(all_lines)
+            tail_lines = all_lines[-8:]
+            lines.append(
+                f"Subprocess log (last {len(tail_lines)} of {line_count} lines, "
+                f"{size_bytes} bytes):"
+            )
+            lines.extend(tail_lines)
         if not agents:
             return lines + ["No tally data yet."]
         if len(agents) == 1:
