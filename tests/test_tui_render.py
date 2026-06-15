@@ -153,6 +153,77 @@ def test_overview_shows_planner_errors() -> None:
     assert "test error" in joined
 
 
+# ── overview heartbeat (P2-3) ──────────────────────────────────────────────
+
+
+def test_overview_shows_last_refresh_age() -> None:
+    """With `enable_heartbeat=True` and `last_load > 0`, `_overview`
+    emits a `Last refresh: Ns ago` line in the header. This is the
+    default-off heartbeat: a separate test (the default-off contract
+    check) confirms the line is absent when the flag is False."""
+    tui = _make_tui(
+        enable_heartbeat=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+        last_load=time.monotonic() - 5,
+    )
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    assert "Last refresh:" in joined
+    assert "s ago" in joined
+    # The line carries a non-negative integer-second count.
+    refresh_line = next(line for line in lines if line.startswith("Last refresh:"))
+    # The format is `Last refresh: Ns ago` where N >= 0.
+    assert refresh_line.endswith("s ago")
+    suffix = refresh_line.removeprefix("Last refresh: ").removesuffix("s ago")
+    assert suffix.isdigit()
+    assert int(suffix) >= 0
+
+
+def test_overview_shows_subprocess_elapsed_when_running() -> None:
+    """With `enable_heartbeat=True` and a live subprocess (i.e.
+    `self._proc is not None` and `self._proc_started_at > 0`),
+    `_overview` emits a `Run alive: yes · Ns elapsed` line in the
+    header. The line is absent when the subprocess has not been
+    launched (the default state)."""
+    tui = _make_tui(
+        enable_heartbeat=True,
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+    )
+    # Simulate a launched-and-alive subprocess.
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._proc_started_at = time.monotonic() - 7
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    assert "Run alive: yes" in joined
+    assert "s elapsed" in joined
+    # The elapsed count is a non-negative integer.
+    run_line = next(line for line in lines if line.startswith("Run alive:"))
+    assert run_line.endswith("s elapsed")
+    suffix = run_line.removeprefix("Run alive: yes · ").removesuffix("s elapsed")
+    assert suffix.isdigit()
+    assert int(suffix) >= 0
+
+
+def test_overview_omits_heartbeat_when_flag_disabled() -> None:
+    """Default-off contract: when `enable_heartbeat=False` (the
+    default), neither the `Last refresh` nor the `Run alive` line
+    appears in `_overview`, even if `last_load > 0` and a subprocess
+    is alive. This guards the Phase 2 default-off feature flag."""
+    tui = _make_tui(
+        # enable_heartbeat defaults to False; not passed explicitly.
+        snapshot=Snapshot(metadata={"status": "running", "token_usage": {}}),
+        last_load=time.monotonic() - 5,
+    )
+    tui._proc = MagicMock()
+    tui._proc.pid = 12345
+    tui._proc_started_at = time.monotonic() - 7
+    lines = tui._overview(80)
+    joined = "\n".join(lines)
+    assert "Last refresh" not in joined
+    assert "Run alive" not in joined
+
+
 # ── help ────────────────────────────────────────────────────────────────────
 
 

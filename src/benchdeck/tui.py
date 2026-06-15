@@ -37,6 +37,7 @@ class BenchDeckTUI:
         agent_b_path: Path | None = None,
         model: str | None = None,
         judge_model: str | None = None,
+        enable_heartbeat: bool = False,
     ) -> None:
         self.run_dir = run_dir
         self.refresh_seconds = refresh_seconds
@@ -48,6 +49,7 @@ class BenchDeckTUI:
         self._status_msg = ""
         self._proc: _sp.Popen[bytes] | None = None
         self._proc_run_dir: Path | None = None
+        self._proc_started_at: float = 0.0
         self._agent_a_path = agent_a_path
         self._agent_b_path = agent_b_path
         self._model = model
@@ -56,6 +58,11 @@ class BenchDeckTUI:
         self._has_color = False
         self._stderr_handle: Any = None
         self._stderr_log: Path | None = None
+        # P2-3 (default-off): when True, _overview appends a
+        # `Last refresh: Ns ago` line on every draw and, while a
+        # subprocess is alive, a `Run alive: yes · Ns elapsed` line.
+        # Defaults to False so the live TUI output is unchanged.
+        self.enable_heartbeat = enable_heartbeat
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -229,6 +236,18 @@ class BenchDeckTUI:
                 lines.append(f"  WARNING: planner terminal error: {msg}")
             if pc.get("parse_error"):
                 lines.append(f"  WARNING: planner parse error: {pc['parse_error']}")
+        # P2-3: heartbeat lines at the bottom of the Overview header.
+        # Gated by `enable_heartbeat` (default False). `last_load` is 0
+        # before the first `load_snapshot` call, so the "Last refresh"
+        # line is suppressed until the first successful load (mirrors
+        # the P1-2 title-age guard).
+        if self.enable_heartbeat:
+            if self.last_load > 0:
+                refresh_elapsed = int(time.monotonic() - self.last_load)
+                lines.append(f"Last refresh: {refresh_elapsed}s ago")
+            if self._proc is not None and self._proc_started_at > 0:
+                run_elapsed = int(time.monotonic() - self._proc_started_at)
+                lines.append(f"Run alive: yes · {run_elapsed}s elapsed")
         lines.append("")
         # Manifest / integrity status
         manifest = Manifest.load(self.run_dir)
@@ -516,6 +535,9 @@ class BenchDeckTUI:
             self._proc = None
             self._proc_run_dir = None
             self._stderr_log = None
+            # P2-3: reset heartbeat start so the "Run alive" line does
+            # not briefly persist after the subprocess has exited.
+            self._proc_started_at = 0.0
 
     def _launch_run(self) -> None:
         if self._proc is not None:
@@ -560,6 +582,10 @@ class BenchDeckTUI:
                 stderr=_sp.STDOUT,
             )
             self._proc_run_dir = run_dir
+            # P2-3: monotonic start time for the "Run alive" heartbeat line.
+            # Set only after Popen succeeds so a failed launch does not
+            # leave a stale timestamp.
+            self._proc_started_at = time.monotonic()
             self._status_msg = f"Launched PID {self._proc.pid} → {run_dir.name}"
         except OSError as exc:
             self._status_msg = f"Launch failed: {exc}"
@@ -593,6 +619,8 @@ class BenchDeckTUI:
         self._proc = None
         self._proc_run_dir = None
         self._stderr_log = None
+        # P2-3: reset heartbeat start on cancel.
+        self._proc_started_at = 0.0
 
     @staticmethod
     def _clamp_scroll(
