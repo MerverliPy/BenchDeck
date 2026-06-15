@@ -6,6 +6,7 @@ No terminal required.
 
 from __future__ import annotations
 
+import curses
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -2020,3 +2021,89 @@ def test_case_list_default_off_omits_mark() -> None:
     # The case list shows no `*` prefix (the `*` column is gated off).
     lines = tui._case_list(80)
     assert not any(line.startswith("*") for line in lines[1:])
+
+
+# ── _init_colors theme stub (P2-4) ──────────────────────────────────────────
+
+
+def test_init_colors_respects_no_color_env(monkeypatch: Any) -> None:
+    """When `theme="auto"` (the default) and the `NO_COLOR` env var
+    is set to any non-empty value, `_init_colors` returns False
+    without initializing any color pairs. Honors
+    https://no-color.org/: any non-empty NO_COLOR value disables
+    color output."""
+    monkeypatch.setenv("NO_COLOR", "1")
+    tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
+    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
+        "benchdeck.tui.curses.start_color"
+    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+        result = tui._init_colors()
+    # Returns False (no color).
+    assert result is False
+    # No init_pair calls were made.
+    assert mock_init_pair.call_count == 0
+
+
+def test_init_colors_light_theme_swaps_pair_6() -> None:
+    """When `theme="light"`, pair 6 is initialized with `COLOR_BLACK`
+    on `COLOR_WHITE` (a header band visible on light-terminal
+    backgrounds). All other pairs (1-5) are unchanged from the
+    default dark palette (foreground rating color on
+    `COLOR_BLACK` background)."""
+    tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="light")
+    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
+        "benchdeck.tui.curses.start_color"
+    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+        result = tui._init_colors()
+    assert result is True
+    # Pair 6 was initialized with BLACK on WHITE.
+    pair_6_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == 6)
+    assert pair_6_call[0][1] == curses.COLOR_BLACK
+    assert pair_6_call[0][2] == curses.COLOR_WHITE
+    # Pairs 1-5 retain BLACK backgrounds.
+    for pair_id in (1, 2, 3, 4, 5):
+        pair_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == pair_id)
+        assert pair_call[0][2] == curses.COLOR_BLACK
+
+
+def test_init_colors_dark_theme_unchanged() -> None:
+    """When `theme="dark"`, the palette is byte-identical to the
+    default ("auto" with no NO_COLOR): pair 6 is `COLOR_BLACK` on
+    `COLOR_CYAN`. The "dark" theme is an explicit declaration of
+    the default dark-mode palette and serves as documentation for
+    callers who want to override the auto-detection."""
+    tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="dark")
+    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
+        "benchdeck.tui.curses.start_color"
+    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+        result = tui._init_colors()
+    assert result is True
+    # Pair 6 is BLACK on CYAN (the current default).
+    pair_6_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == 6)
+    assert pair_6_call[0][1] == curses.COLOR_BLACK
+    assert pair_6_call[0][2] == curses.COLOR_CYAN
+
+
+def test_init_colors_default_auto_preserves_current_palette(
+    monkeypatch: Any,
+) -> None:
+    """Default-off contract: with `theme="auto"` (the default) and
+    no `NO_COLOR` env var, the palette is identical to the
+    pre-P2-4 default (pair 6 = BLACK on CYAN, all rating colors on
+    BLACK backgrounds). This locks down the Phase 2 default-off
+    guarantee for the theme feature — the live TUI invocation is
+    provably unchanged."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
+    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
+        "benchdeck.tui.curses.start_color"
+    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+        result = tui._init_colors()
+    assert result is True
+    # Pair 6 is BLACK on CYAN (the pre-P2-4 default).
+    pair_6_call = next(c for c in mock_init_pair.call_args_list if c[0][0] == 6)
+    assert pair_6_call[0][1] == curses.COLOR_BLACK
+    assert pair_6_call[0][2] == curses.COLOR_CYAN
+    # All 6 pairs are initialized.
+    pair_ids = sorted(c[0][0] for c in mock_init_pair.call_args_list)
+    assert pair_ids == [1, 2, 3, 4, 5, 6]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import curses
 import datetime
+import os
 import subprocess as _sp
 import textwrap
 import time
@@ -42,6 +43,7 @@ class BenchDeckTUI:
         enable_case_filter: bool = False,
         enable_log_tail: bool = False,
         enable_batch_export: bool = False,
+        theme: str = "auto",
     ) -> None:
         self.run_dir = run_dir
         self.refresh_seconds = refresh_seconds
@@ -102,6 +104,17 @@ class BenchDeckTUI:
         # preserved as a shortcut for the current case.
         self.enable_batch_export = enable_batch_export
         self._marked: set[int] = set()
+        # P2-4: theme stub. The default ("auto") respects the
+        # `NO_COLOR` env var (per https://no-color.org/) and uses
+        # the current default palette (pair 6 = BLACK on CYAN).
+        # "light" swaps pair 6 to BLACK on WHITE so the header
+        # band is visible on light-terminal backgrounds. "dark"
+        # is an explicit declaration of the default palette and
+        # is byte-identical to "auto" with no NO_COLOR set.
+        # All rating colors (pairs 1-5) are unchanged across
+        # themes. Defaults to "auto" so the live TUI output
+        # is unchanged.
+        self.theme = theme
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -974,8 +987,13 @@ class BenchDeckTUI:
 
     # ── colour support ──────────────────────────────────────────────────────
 
-    @staticmethod
-    def _init_colors() -> bool:
+    def _init_colors(self) -> bool:
+        # P2-4: honor the NO_COLOR env var only when the theme is
+        # "auto" (the default). An explicit theme choice ("dark" or
+        # "light") overrides the env var. Per https://no-color.org/,
+        # any non-empty value of NO_COLOR disables color output.
+        if self.theme == "auto" and os.environ.get("NO_COLOR"):
+            return False
         if not curses.has_colors():
             return False
         try:
@@ -989,7 +1007,14 @@ class BenchDeckTUI:
         curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)
         curses.init_pair(4, curses.COLOR_BLUE, curses.COLOR_BLACK)
         curses.init_pair(5, curses.COLOR_CYAN, curses.COLOR_BLACK)
-        curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        # P2-4: pair 6 is the header/footer band. For "light"
+        # theme, swap to BLACK on WHITE so the band is visible
+        # on light-terminal backgrounds. For "dark" (or "auto"
+        # without NO_COLOR), use the current default BLACK on CYAN.
+        if self.theme == "light":
+            curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_WHITE)
+        else:
+            curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_CYAN)
         return True
 
     @staticmethod
