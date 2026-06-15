@@ -41,6 +41,7 @@ class BenchDeckTUI:
         enable_infra_pointer: bool = False,
         enable_case_filter: bool = False,
         enable_log_tail: bool = False,
+        enable_batch_export: bool = False,
     ) -> None:
         self.run_dir = run_dir
         self.refresh_seconds = refresh_seconds
@@ -90,6 +91,17 @@ class BenchDeckTUI:
         # tail is the last 8 lines. Defaults to False so the live
         # TUI output is unchanged.
         self.enable_log_tail = enable_log_tail
+        # P2-5 (default-off): when True, the Cases tab supports
+        # multi-select for batch export. `space` (ord 32) toggles
+        # the current case's mark (a `set[int]` of case IDs in
+        # `self._marked`); `E` exports all marked cases to a
+        # single combined `cases_<ts>.md` file. Marked rows
+        # display a leading `*` column. Reload (`r`) clears the
+        # marks. Defaults to False so the live TUI output is
+        # unchanged. The existing single-case `e` export is
+        # preserved as a shortcut for the current case.
+        self.enable_batch_export = enable_batch_export
+        self._marked: set[int] = set()
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -183,6 +195,23 @@ class BenchDeckTUI:
             cycle = {"id": "family", "family": "rating", "rating": "id"}
             self._sort = cycle.get(self._sort, "id")
             self._status_msg = f"Sort: {self._sort}"
+        elif key == ord(" ") and self.tab == 1 and self.enable_batch_export:
+            # P2-5: toggle the mark of the currently selected case.
+            # The `set` semantics add the id if absent, remove it if
+            # present. No-op if there is no selected case.
+            cases = self._cases()
+            if cases:
+                self.selected = min(self.selected, len(cases) - 1)
+                case = cases[self.selected]
+                cid = case.get("id")
+                if isinstance(cid, int):
+                    if cid in self._marked:
+                        self._marked.discard(cid)
+                    else:
+                        self._marked.add(cid)
+        elif key == ord("E") and self.tab == 1 and self.enable_batch_export:
+            # P2-5: export all marked cases to a combined markdown file.
+            self._export_marked()
         elif key == ord("r"):
             self.snapshot = load_snapshot(self.run_dir)
             self.last_load = time.monotonic()
@@ -190,6 +219,9 @@ class BenchDeckTUI:
             if self.enable_case_filter:
                 self._filter = ""
                 self._sort = "id"
+            # P2-5: reload also clears marked cases.
+            if self.enable_batch_export:
+                self._marked = set()
         elif key == ord("e") and self.tab == 1:
             self._export_case()
         elif key == ord("n"):
@@ -515,8 +547,19 @@ class BenchDeckTUI:
                 if mark:
                     state = f"{mark} {state}"
                 marker = ">" if index == self.selected else " "
+                # P2-5: a leading `*` column on marked rows when the
+                # batch-export feature is on. When the feature is
+                # off, `star` is the empty string so the prefix is
+                # byte-identical to the original (4 chars; `>` at
+                # column 0). When the feature is on, `star` is
+                # either `*` (marked) or ` ` (unmarked), widening
+                # the prefix to 5 chars and shifting `>` to column 1.
+                if self.enable_batch_export:
+                    star = "*" if case_id in self._marked else " "
+                else:
+                    star = ""
                 title = str(case.get("title", "Untitled"))
-                prefix = f"{marker}{case_id:>2} "
+                prefix = f"{star}{marker}{case_id:>2} "
                 available = max(8, width - len(prefix) - len(state) - 1)
                 lines.append(prefix + state + " " + title[:available])
         else:
@@ -531,8 +574,14 @@ class BenchDeckTUI:
                 if mark:
                     state = f"{mark} {state}"
                 marker = ">" if index == self.selected else " "
+                # P2-5: leading `*` on marked rows (gated; same
+                # semantics as the default-path branch above).
+                if self.enable_batch_export:
+                    star = "*" if case_id in self._marked else " "
+                else:
+                    star = ""
                 title = str(case.get("title", "Untitled"))
-                prefix = f"{marker}{case_id:>2} "
+                prefix = f"{star}{marker}{case_id:>2} "
                 available = max(8, width - len(prefix) - len(state) - 1)
                 lines.append(prefix + state + " " + title[:available])
         return lines
@@ -716,6 +765,93 @@ class BenchDeckTUI:
         try:
             Path(filename).write_text("\n".join(lines), encoding="utf-8")
             self._status_msg = f"Exported {filename}"
+        except OSError as exc:
+            self._status_msg = f"Export failed: {exc}"
+
+    def _export_marked(self) -> None:
+        """P2-5: export all marked cases to a single combined
+        `cases_<ts>.md` file in `run_dir`. Each marked case gets a
+        `## Case N: Title` section with the same body as the
+        single-case `_export_case` output. No-op (with a status
+        message) when `self._marked` is empty or when no case in
+        the plan is currently marked."""
+        if not self._marked:
+            self._status_msg = "No marked cases to export"
+            return
+        cases_by_id: dict[int, dict[str, Any]] = {}
+        for case in self._cases():
+            cid = case.get("id")
+            if isinstance(cid, int):
+                cases_by_id[cid] = case
+        # Honour the order in which cases appear in the plan (i.e.
+        # by id ascending), not the order in which the user marked
+        # them. This gives a stable, predictable file layout.
+        marked_ids = sorted(cid for cid in self._marked if cid in cases_by_id)
+        if not marked_ids:
+            self._status_msg = "No marked cases to export (none match plan)"
+            return
+        ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+        filename = str(self.run_dir / f"cases_{ts}.md")
+        lines: list[str] = [
+            f"# Exported Cases ({len(marked_ids)} marked)",
+            "",
+            f"**Exported:** {ts}",
+            "",
+            "---",
+            "",
+        ]
+        for idx, cid in enumerate(marked_ids):
+            case = cases_by_id[cid]
+            case_judgments = [
+                j for j in self.snapshot.judgments if j.get("case_id") == cid
+            ]
+            result = self._result_for(cid)
+            lines += [
+                f"## Case {cid}: {case.get('title', 'Untitled')}",
+                "",
+                f"**Family:** {case.get('family', '')}",
+                "",
+                "### Purpose",
+                "",
+                str(case.get("purpose", "")),
+                "",
+                "### Test Prompt",
+                "",
+                "```",
+                str(case.get("test_prompt", "")),
+                "```",
+                "",
+                "### Judgments",
+                "",
+            ]
+            if case_judgments:
+                for judgment in case_judgments:
+                    agent = judgment.get("agent_label", "unknown")
+                    lines.append(f"#### Agent: {agent}")
+                    lines.append(f"**Rating:** {judgment.get('overall_rating', '?')}")
+                    gate = judgment.get("gate_check") or {}
+                    lines.append(f"**Gate:** {gate.get('status', '?')} — {gate.get('reason', '')}")
+                    lines.append(f"**Why:** {judgment.get('why', '')}")
+                    lines.append("")
+            else:
+                lines.append("*No judgments yet.*")
+                lines.append("")
+            if result:
+                lines.append("### Agent Output")
+                lines.append("")
+                lines.append("```")
+                lines.append(str(result.get("final_output", "")))
+                lines.append("```")
+                lines.append("")
+            if idx < len(marked_ids) - 1:
+                lines.append("---")
+                lines.append("")
+        try:
+            Path(filename).write_text("\n".join(lines), encoding="utf-8")
+            self._status_msg = f"Exported {len(marked_ids)} cases to {filename}"
+            # Marks are one-shot: clear them after a successful export
+            # so a second `E` press does not re-export the same set.
+            self._marked = set()
         except OSError as exc:
             self._status_msg = f"Export failed: {exc}"
 

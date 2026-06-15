@@ -1857,3 +1857,166 @@ def test_overview_default_off_omits_log_tail(tmp_path: Path) -> None:
     assert "Subprocess log" not in joined
     # The log file was not read or modified.
     assert log_path.read_text(encoding="utf-8") == "line 1\nline 2\n"
+
+
+# ── case list multi-select for batch export (P2-5) ──────────────────────────
+
+
+def test_case_list_space_toggles_mark() -> None:
+    """With `enable_batch_export=True` and `tab=1`, pressing `space`
+    on the Cases tab toggles the current case's mark (i.e. adds the
+    case ID to `self._marked` if absent, removes it if present).
+    The rendered case list shows a leading `*` on marked rows."""
+    tui = _make_tui(
+        enable_batch_export=True,
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "First Case"},
+                    {"id": 2, "title": "Second Case"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    # Initially, no marks.
+    assert tui._marked == set()
+    # Press space on case 1 → marked.
+    tui._handle_key(ord(" "))
+    assert tui._marked == {1}
+    # Press space again on case 1 → unmarked.
+    tui._handle_key(ord(" "))
+    assert tui._marked == set()
+    # Move to case 2 and mark it.
+    tui.selected = 1
+    tui._handle_key(ord(" "))
+    assert tui._marked == {2}
+    # Mark case 1 too; both are now marked.
+    tui.selected = 0
+    tui._handle_key(ord(" "))
+    assert tui._marked == {1, 2}
+    # The rendered list shows a `*` on marked rows (column 0).
+    lines = tui._case_list(80)
+    marked_rows = [line for line in lines[1:] if line.startswith("*")]
+    assert len(marked_rows) == 2
+
+
+def test_export_marked_writes_combined_markdown(tmp_path: Path) -> None:
+    """With `enable_batch_export=True` and at least one case in
+    `self._marked`, pressing `E` on the Cases tab exports all
+    marked cases to a single `cases_<ts>.md` file in `run_dir`.
+    The combined file has a `## Case N: Title` section per case
+    and a file-level header. The `_marked` set is cleared after
+    a successful export (marks are one-shot)."""
+    tui = BenchDeckTUI(tmp_path, enable_batch_export=True)
+    tui.snapshot = Snapshot(
+        plan={
+            "cases": [
+                {
+                    "id": 1,
+                    "title": "First Exported",
+                    "family": "happy_path",
+                    "purpose": "first test",
+                    "test_prompt": "do first",
+                },
+                {
+                    "id": 2,
+                    "title": "Second Exported",
+                    "family": "edge_case_logic",
+                    "purpose": "second test",
+                    "test_prompt": "do second",
+                },
+            ]
+        },
+        judgments=[],
+        results={},
+    )
+    tui.tab = 1  # Cases tab — required for the `E` keypress
+    tui.selected = 0
+    tui._marked = {1, 2}
+    tui._handle_key(ord("E"))
+    # A combined export file is written.
+    exported = list(tmp_path.glob("cases_*.md"))
+    assert len(exported) == 1
+    content = exported[0].read_text(encoding="utf-8")
+    # The file-level header reports the count.
+    assert "Exported Cases (2 marked)" in content
+    # Both case sections are present.
+    assert "## Case 1: First Exported" in content
+    assert "## Case 2: Second Exported" in content
+    assert "do first" in content
+    assert "do second" in content
+    # The marks are cleared after a successful export.
+    assert tui._marked == set()
+    # The status message confirms the export.
+    assert "Exported 2 cases" in tui._status_msg
+
+
+def test_export_marked_empty_writes_nothing(tmp_path: Path) -> None:
+    """With `enable_batch_export=True` but `self._marked` empty,
+    pressing `E` on the Cases tab does NOT write any file. A
+    status message indicates nothing was exported."""
+    tui = BenchDeckTUI(tmp_path, enable_batch_export=True)
+    tui.snapshot = Snapshot(
+        plan={
+            "cases": [
+                {
+                    "id": 1,
+                    "title": "Unmarked Case",
+                    "family": "happy_path",
+                    "purpose": "test",
+                    "test_prompt": "do",
+                }
+            ]
+        },
+        judgments=[],
+        results={},
+    )
+    tui.tab = 1  # Cases tab — required for the `E` keypress
+    tui.selected = 0
+    tui._marked = set()  # no marks
+    tui._handle_key(ord("E"))
+    # No file is written.
+    exported = list(tmp_path.glob("cases_*.md"))
+    assert len(exported) == 0
+    # A status message indicates nothing was exported.
+    assert "No marked cases" in tui._status_msg
+
+
+def test_case_list_default_off_omits_mark() -> None:
+    """Default-off contract: when `enable_batch_export=False` (the
+    default), the `space` key does NOT toggle a mark, `E` does NOT
+    export, and the case list shows no `*` prefix. The existing
+    single-case `e` export is preserved as a shortcut for the
+    current case. This locks down the Phase 2 default-off
+    guarantee for the batch-export feature."""
+    tui = _make_tui(
+        # enable_batch_export defaults to False; not passed.
+        tab=1,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Case 1"},
+                    {"id": 2, "title": "Case 2"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    # Pre-set the marks set to a non-empty value to verify the
+    # default-off path ignores the field entirely.
+    tui._marked = {1}
+    # Press space — no mark toggle.
+    tui._handle_key(ord(" "))
+    # The marks are unchanged.
+    assert tui._marked == {1}
+    # Press E — no export.
+    tui._handle_key(ord("E"))
+    # The marks are unchanged.
+    assert tui._marked == {1}
+    # The case list shows no `*` prefix (the `*` column is gated off).
+    lines = tui._case_list(80)
+    assert not any(line.startswith("*") for line in lines[1:])
