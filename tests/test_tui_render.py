@@ -1574,3 +1574,208 @@ def test_detail_marks_agent_output_block() -> None:
     # The title line itself is NOT prefixed.
     title_line = next(line for line in lines if line == "Agent output")
     assert "│ " not in title_line
+
+
+# ── case list filter & sort (P2-1) ──────────────────────────────────────────
+
+
+def test_case_list_filter_by_family() -> None:
+    """With `enable_case_filter=True` and `self._filter = "family:edge_case_logic"`,
+    `_case_list` only shows cases whose `family` field matches. The
+    header reflects the filtered count and the total."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Edge 1", "family": "edge_case_logic"},
+                    {"id": 2, "title": "Happy 1", "family": "happy_path"},
+                    {"id": 3, "title": "Edge 2", "family": "edge_case_logic"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    tui._filter = "family:edge_case_logic"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # The two edge cases appear; the happy case does not.
+    assert "Edge 1" in joined
+    assert "Edge 2" in joined
+    assert "Happy 1" not in joined
+    # Header reflects filtered count out of total.
+    assert "2 of 3 total" in lines[0]
+    # Sort is "id" (the default), so no `sort:…` suffix.
+    assert "sort:" not in lines[0]
+
+
+def test_case_list_filter_by_state_blocked() -> None:
+    """With `self._filter = "state:BLOCKED"`, only blocked cases are
+    visible. The other states (judged, pending) are filtered out."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Judged Case"},
+                    {"id": 2, "title": "Blocked Case"},
+                    {"id": 3, "title": "Pending Case"},
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Excellent",
+                }
+            ],
+            policy_blocks=[{"case_id": 2, "agent_label": "agent_a"}],
+        ),
+    )
+    tui._filter = "state:BLOCKED"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # Only the blocked case is visible.
+    assert "Blocked Case" in joined
+    assert "Judged Case" not in joined
+    assert "Pending Case" not in joined
+    # Header counts: 1 of 3 total, 0 judged, 1 blocked.
+    assert "1 of 3 total" in lines[0]
+    assert "0 judged" in lines[0]
+    assert "1 blocked" in lines[0]
+
+
+def test_case_list_sort_by_family() -> None:
+    """With `self._sort = "family"`, cases are ordered by family
+    (alphabetical, case-insensitive) then by case id. The header
+    carries a `sort:family` suffix."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Z case", "family": "zebra"},
+                    {"id": 2, "title": "A case", "family": "alpha"},
+                    {"id": 3, "title": "M case", "family": "mango"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    tui._sort = "family"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # Family order: alpha < mango < zebra → case 2, case 3, case 1.
+    pos_a = joined.find("A case")
+    pos_m = joined.find("M case")
+    pos_z = joined.find("Z case")
+    assert pos_a != -1 and pos_m != -1 and pos_z != -1
+    assert pos_a < pos_m < pos_z
+    # Header carries sort:family.
+    assert "sort:family" in lines[0]
+
+
+def test_case_list_filter_clears_status_on_escape() -> None:
+    """When the filter prompt is open, pressing Esc restores the
+    prior filter (the draft is discarded), closes the prompt, and
+    sets a status message indicating the prompt was cancelled. The
+    case list is unchanged from its prior filtered state."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        tab=1,
+        snapshot=Snapshot(
+            plan={"cases": [{"id": 1, "title": "Only Case"}]}
+        ),
+    )
+    tui._filter = ""  # start with no filter
+    # Open the filter prompt.
+    tui._handle_key(ord("f"))
+    assert tui._filter_mode is True
+    # Type some text into the draft.
+    tui._handle_key(ord("a"))
+    tui._handle_key(ord("b"))
+    assert tui._filter_draft == "ab"
+    # Press Esc.
+    tui._handle_key(27)
+    # The prompt is closed; the prior filter is restored.
+    assert tui._filter_mode is False
+    assert tui._filter == ""
+    assert tui._filter_draft == ""
+    # A status message indicates the prompt was cancelled.
+    assert "cancel" in tui._status_msg.lower()
+
+
+def test_case_list_selected_clamps_after_filter() -> None:
+    """After applying a filter that reduces the visible list below
+    `self.selected`, `_case_list` re-clamps `self.selected` to the
+    new length so the `>` marker remains on a valid (visible) row."""
+    tui = _make_tui(
+        enable_case_filter=True,
+        selected=5,  # far past the end of the unfiltered list
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Edge 1", "family": "edge_case_logic"},
+                    {"id": 2, "title": "Happy 1", "family": "happy_path"},
+                    {"id": 3, "title": "Edge 2", "family": "edge_case_logic"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    tui._filter = "family:edge_case_logic"  # reduces to 2 cases
+    lines = tui._case_list(80)
+    # After clamping, self.selected points at the last visible case.
+    assert tui.selected == 1
+    # The `>` marker is on the last case row (the clamped selected).
+    assert any(line.startswith(">") for line in lines[1:])
+    assert lines[-1].startswith(">")
+    # Only the 2 filtered cases are visible (no Happy 1).
+    joined = "\n".join(lines)
+    assert "Happy 1" not in joined
+
+
+def test_case_list_default_off_omits_filter_and_sort() -> None:
+    """Default-off contract: when `enable_case_filter=False` (the
+    default), `self._filter` and `self._sort` are ignored by
+    `_case_list` and the `f` / `s` keys are no-ops in `_handle_key`.
+    This locks down the Phase 2 default-off guarantee for the
+    case-list feature."""
+    tui = _make_tui(
+        # enable_case_filter defaults to False; not passed.
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {"id": 1, "title": "Edge", "family": "edge_case_logic"},
+                    {"id": 2, "title": "Happy", "family": "happy_path"},
+                ]
+            },
+            judgments=[],
+        ),
+    )
+    # If the flag were on, the filter would restrict to "Edge" and
+    # the sort would reorder. With the flag off, both are ignored.
+    tui._filter = "family:edge_case_logic"
+    tui._sort = "family"
+    lines = tui._case_list(80)
+    joined = "\n".join(lines)
+    # Both cases are visible (no filter applied).
+    assert "Edge" in joined
+    assert "Happy" in joined
+    # Header is the original unfiltered form.
+    assert " of " not in lines[0]
+    assert lines[0] == "Cases: 2 total · 0 judged · 0 blocked"
+    # The `f` and `s` keys are no-ops when the flag is off. The
+    # filter prompt does not open, and the sort is not cycled
+    # (whatever value the caller set is preserved).
+    tui.tab = 1
+    tui._handle_key(ord("f"))
+    assert tui._filter_mode is False
+    tui._handle_key(ord("s"))
+    # The sort is unchanged from what the caller set — the `s`
+    # keypress was ignored because the flag is off.
+    assert tui._sort == "family"

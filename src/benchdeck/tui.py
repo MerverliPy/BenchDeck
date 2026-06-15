@@ -39,6 +39,7 @@ class BenchDeckTUI:
         judge_model: str | None = None,
         enable_heartbeat: bool = False,
         enable_infra_pointer: bool = False,
+        enable_case_filter: bool = False,
     ) -> None:
         self.run_dir = run_dir
         self.refresh_seconds = refresh_seconds
@@ -70,6 +71,17 @@ class BenchDeckTUI:
         # details on the Detail tab. Defaults to False so the live
         # TUI output is unchanged.
         self.enable_infra_pointer = enable_infra_pointer
+        # P2-1 (default-off): when True, the Cases tab supports a
+        # filter (`f` to open a one-line prompt; `family:`, `state:`,
+        # `rating:`, or free-text substring) and a sort cycle (`s`
+        # among `id`, `family`, `rating`). Filter and sort persist
+        # across tab switches and are reset on `r` (reload). Defaults
+        # to False so the live TUI output is unchanged.
+        self.enable_case_filter = enable_case_filter
+        self._filter: str = ""
+        self._sort: str = "id"
+        self._filter_mode: bool = False
+        self._filter_draft: str = ""
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -100,6 +112,32 @@ class BenchDeckTUI:
     def _handle_key(self, key: int) -> None:
         if key != ord("x") and self._cancel_requested_at is not None:
             self._cancel_requested_at = None
+        # P2-1: when the filter prompt is open, the prompt captures
+        # all keys (Enter apply, Esc cancel, Backspace, printable ASCII).
+        # Other keys are ignored. This is a transient mode — it does
+        # not affect tab navigation or quit.
+        if self._filter_mode and self.enable_case_filter:
+            if key in (10, 13):  # Enter
+                self._filter = self._filter_draft
+                self._filter_mode = False
+                self._status_msg = (
+                    f"Filter applied: {self._filter!r}"
+                    if self._filter
+                    else "Filter cleared"
+                )
+                return
+            if key == 27:  # Esc
+                self._filter_draft = self._filter
+                self._filter_mode = False
+                self._status_msg = "Filter cancelled"
+                return
+            if key in (curses.KEY_BACKSPACE, 127, 8):
+                self._filter_draft = self._filter_draft[:-1]
+                return
+            if 0x20 <= key < 0x7F:  # printable ASCII
+                self._filter_draft += chr(key)
+                return
+            return
         if key in (ord("1"), ord("2"), ord("3"), ord("4")):
             self.tab = key - ord("1")
             self.scroll = 0
@@ -120,11 +158,30 @@ class BenchDeckTUI:
             else:
                 self.scroll = max(0, self.scroll - 1)
         elif key in (10, 13) and self.tab == 1:
+            # Enter on Cases → Detail. The filter prompt (P2-1) uses
+            # Enter to apply the filter, but that branch is handled
+            # in the `_filter_mode` early-return at the top of this
+            # method, so reaching this branch implies the prompt is
+            # closed and the original Cases→Detail semantics apply.
             self.tab = 2
             self.scroll = 0
+        elif key == ord("f") and self.tab == 1 and self.enable_case_filter:
+            # Open the filter prompt. The draft is pre-populated with
+            # the current filter so the user can edit in place.
+            self._filter_mode = True
+            self._filter_draft = self._filter
+        elif key == ord("s") and self.tab == 1 and self.enable_case_filter:
+            # Cycle sort among id, family, rating.
+            cycle = {"id": "family", "family": "rating", "rating": "id"}
+            self._sort = cycle.get(self._sort, "id")
+            self._status_msg = f"Sort: {self._sort}"
         elif key == ord("r"):
             self.snapshot = load_snapshot(self.run_dir)
             self.last_load = time.monotonic()
+            # P2-1: reload also resets filter and sort to defaults.
+            if self.enable_case_filter:
+                self._filter = ""
+                self._sort = "id"
         elif key == ord("e") and self.tab == 1:
             self._export_case()
         elif key == ord("n"):
@@ -189,13 +246,32 @@ class BenchDeckTUI:
                 self._safe_add(stdscr, 2, width - 2, " ↑", width)
             if self.scroll < max_scroll:
                 self._safe_add(stdscr, 2 + view_height - 1, width - 2, " ↓", width)
-        status = self._status_msg
-        if not status:
-            if width < 56:
-                status = "1-4 tabs · j/k move · q quit"
-            else:
-                hints = self.FOOTER_HINTS.get(self.tab, self.FOOTER_HINTS[0])
-                status = " | ".join(hints)
+        # P2-1: the filter prompt, when active, takes priority over
+        # both `_status_msg` and the normal tab hint. The prompt shows
+        # the live draft (with a block cursor) and a hint to apply/cancel.
+        if self._filter_mode and self.enable_case_filter:
+            status = f"Filter: {self._filter_draft}█  (Enter apply, Esc cancel)"
+        else:
+            status = self._status_msg
+            if not status:
+                if width < 56:
+                    if self.tab == 1 and self.enable_case_filter:
+                        status = "1-4 tabs · j/k move · f filter · q quit"
+                    else:
+                        status = "1-4 tabs · j/k move · q quit"
+                else:
+                    hints = self.FOOTER_HINTS.get(self.tab, self.FOOTER_HINTS[0])
+                    if self.tab == 1 and self.enable_case_filter:
+                        hints = [
+                            "Enter open",
+                            "e export",
+                            "f filter",
+                            "s sort",
+                            "j/k move",
+                            "h/l tabs",
+                            "q quit",
+                        ]
+                    status = " | ".join(hints)
         self._safe_add(stdscr, height - 1, 0, status, width, footer_attr)
         stdscr.refresh()
 
@@ -320,39 +396,102 @@ class BenchDeckTUI:
         total = len(case_ids)
         judged = sum(1 for cid in case_ids if cid in judgments_by_case)
         blocked = sum(1 for cid in case_ids if cid in blocks)
-        header = f"Cases: {total} total · {judged} judged · {blocked} blocked"
+        # P2-1 (default-off): when `enable_case_filter` is True, build
+        # the visible list by applying `self._filter` and `self._sort`,
+        # and update the header to show filtered counts and the active
+        # sort. The selected index is re-clamped to the new visible
+        # length. When the flag is False (the default), the original
+        # header format and ordering are preserved verbatim.
+        if self.enable_case_filter:
+            visible: list[tuple[dict[str, Any], str]] = []
+            for case in cases:
+                cid = case.get("id")
+                if not isinstance(cid, int):
+                    continue
+                case_judgments = judgments_by_case.get(cid)
+                if case_judgments:
+                    state = " ".join(
+                        f"{j.get('overall_rating', '?')}[{j.get('agent_label', '')}]"
+                        for j in case_judgments
+                    )
+                elif cid in blocks:
+                    state = "BLOCKED"
+                else:
+                    state = "PENDING"
+                if _filter_matches(self._filter, case, state):
+                    visible.append((case, state))
+            if self._sort == "family":
+                visible.sort(
+                    key=lambda cs: (str(cs[0].get("family", "")).lower(), cs[0].get("id", 0))
+                )
+            elif self._sort == "rating":
+                visible.sort(key=lambda cs: (_rating_order(cs[1]), cs[0].get("id", 0)))
+            # "id" sort preserves plan.cases insertion order.
+            if visible:
+                self.selected = min(self.selected, len(visible) - 1)
+            else:
+                self.selected = 0
+            f_judged = sum(1 for _, s in visible if s != "PENDING" and s != "BLOCKED")
+            f_blocked = sum(1 for _, s in visible if s == "BLOCKED")
+            header = (
+                f"Cases: {len(visible)} of {total} total · "
+                f"{f_judged} judged · {f_blocked} blocked"
+            )
+            if self._sort != "id":
+                header += f" · sort:{self._sort}"
+        else:
+            header = f"Cases: {total} total · {judged} judged · {blocked} blocked"
+            visible = None  # signal: use the original loop below
         if len(header) > width:
             # Truncate to width chars; the curses display will further
             # clip to width-1 visible cells. The header still begins
             # with "Cases: N total …" so the meaning is preserved.
             header = header[:width]
         lines = [header]
-        for index, case in enumerate(cases):
-            case_id = case.get("id")
-            if not isinstance(case_id, int):
-                continue
-            case_judgments = judgments_by_case.get(case_id)
-            if case_judgments:
-                parts = []
-                for jj in case_judgments:
-                    agent = jj.get("agent_label", "")
-                    rating = jj.get("overall_rating", "?")
-                    parts.append(f"{rating}[{agent}]")
-                state = " ".join(parts)
-            elif case_id in blocks:
-                state = "BLOCKED"
-            else:
-                state = "PENDING"
-            # Prepend a worst-case status mark so each row carries a
-            # quick visual signal: [✓] pass, [!] warn, [X] fail/blocked.
-            mark = _status_mark_for_state(state)
-            if mark:
-                state = f"{mark} {state}"
-            marker = ">" if index == self.selected else " "
-            title = str(case.get("title", "Untitled"))
-            prefix = f"{marker}{case_id:>2} "
-            available = max(8, width - len(prefix) - len(state) - 1)
-            lines.append(prefix + state + " " + title[:available])
+        if visible is None:
+            # Original rendering path (gated off by `enable_case_filter`).
+            for index, case in enumerate(cases):
+                case_id = case.get("id")
+                if not isinstance(case_id, int):
+                    continue
+                case_judgments = judgments_by_case.get(case_id)
+                if case_judgments:
+                    parts = []
+                    for jj in case_judgments:
+                        agent = jj.get("agent_label", "")
+                        rating = jj.get("overall_rating", "?")
+                        parts.append(f"{rating}[{agent}]")
+                    state = " ".join(parts)
+                elif case_id in blocks:
+                    state = "BLOCKED"
+                else:
+                    state = "PENDING"
+                # Prepend a worst-case status mark so each row carries a
+                # quick visual signal: [✓] pass, [!] warn, [X] fail/blocked.
+                mark = _status_mark_for_state(state)
+                if mark:
+                    state = f"{mark} {state}"
+                marker = ">" if index == self.selected else " "
+                title = str(case.get("title", "Untitled"))
+                prefix = f"{marker}{case_id:>2} "
+                available = max(8, width - len(prefix) - len(state) - 1)
+                lines.append(prefix + state + " " + title[:available])
+        else:
+            # P2-1 rendering path. `index` is the position in the
+            # filtered+sorted visible list, so the `>` marker is
+            # always on a row that is actually visible.
+            for index, (case, state) in enumerate(visible):
+                case_id = case.get("id")
+                if not isinstance(case_id, int):
+                    continue
+                mark = _status_mark_for_state(state)
+                if mark:
+                    state = f"{mark} {state}"
+                marker = ">" if index == self.selected else " "
+                title = str(case.get("title", "Untitled"))
+                prefix = f"{marker}{case_id:>2} "
+                available = max(8, width - len(prefix) - len(state) - 1)
+                lines.append(prefix + state + " " + title[:available])
         return lines
 
     def _detail(self, width: int) -> list[str]:
@@ -457,6 +596,8 @@ class BenchDeckTUI:
             "j / k    move selection or scroll",
             "Enter    open selected case",
             "e        export case as Markdown",
+            "f        filter cases (family: / state: / rating: / text)",
+            "s        cycle sort: id / family / rating",
             "n        launch a new benchmark run",
             "x        cancel running subprocess",
             "r        reload artifacts",
@@ -781,3 +922,75 @@ def _status_mark_for_state(state: str) -> str:
     if all(r in ("Excellent", "Strong") for r in ratings):
         return "[✓]"
     return ""
+
+
+def _filter_matches(filter_str: str, case: dict[str, Any], state: str) -> bool:
+    """P2-1: return True if `case` matches the active filter string.
+
+    An empty filter matches every case. Recognised prefixes:
+      - `family:foo`     — `case["family"]` equals `foo` (case-insensitive)
+      - `state:BLOCKED`  — `state` equals "BLOCKED" (case-insensitive)
+      - `state:JUDGED`   — `state` is not PENDING and not BLOCKED
+      - `state:PENDING`  — `state` equals "PENDING"
+      - `rating:Foo`     — any token in `state` (split on whitespace)
+                           starts with the rating `Foo` (case-insensitive)
+    Anything else is treated as a free-text substring and matched
+    against `case["title"]` (case-insensitive). A whitespace-only
+    filter is treated as empty.
+    """
+    f = filter_str.strip()
+    if not f:
+        return True
+    if ":" in f:
+        key, _, val = f.partition(":")
+        key = key.strip().lower()
+        val = val.strip()
+        if key == "family":
+            return str(case.get("family", "")).lower() == val.lower()
+        if key == "state":
+            v = val.upper()
+            if v == "JUDGED":
+                return state != "PENDING" and state != "BLOCKED"
+            if v == "PENDING":
+                return state == "PENDING"
+            return state.upper() == v
+        if key == "rating":
+            v = val.lower()
+            return any(token.lower().startswith(v) for token in state.split())
+    return f.lower() in str(case.get("title", "")).lower()
+
+
+# P2-1: rating-bucket order used by `_sort = "rating"`. Lower numbers
+# sort first ("worst first") so triage surfaces problems. BLOCKED is
+# treated as worse than any rating, and unrecognized states sort last.
+_RATING_ORDER: dict[str, int] = {
+    "BLOCKED": 0,
+    "Fail": 1,
+    "Weak": 2,
+    "Acceptable": 3,
+    "Strong": 4,
+    "Excellent": 5,
+    "PENDING": 6,
+}
+
+
+def _rating_order(state: str) -> int:
+    """P2-1: return the numeric ordering for a case's state string,
+    used as the primary sort key when `_sort == "rating"`. The order
+    is worst-first (BLOCKED < Fail < Weak < Acceptable < Strong <
+    Excellent < PENDING < unrecognised). For a multi-rating state, the
+    worst rating present in the state wins, mirroring the
+    `_status_mark_for_state` semantics."""
+    if state == "BLOCKED":
+        return _RATING_ORDER["BLOCKED"]
+    if state == "PENDING":
+        return _RATING_ORDER["PENDING"]
+    worst = len(_RATING_ORDER)
+    for token in state.split():
+        if "[" not in token:
+            continue
+        rating = token.split("[", 1)[0]
+        rank = _RATING_ORDER.get(rating, len(_RATING_ORDER))
+        if rank < worst:
+            worst = rank
+    return worst
