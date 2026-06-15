@@ -154,9 +154,7 @@ class BenchDeckTUI:
                 self._filter = self._filter_draft
                 self._filter_mode = False
                 self._status_msg = (
-                    f"Filter applied: {self._filter!r}"
-                    if self._filter
-                    else "Filter cleared"
+                    f"Filter applied: {self._filter!r}" if self._filter else "Filter cleared"
                 )
                 return
             if key == 27:  # Esc
@@ -428,9 +426,7 @@ class BenchDeckTUI:
             text = ""
             if size_bytes > 0:
                 try:
-                    text = self._stderr_log.read_text(
-                        encoding="utf-8", errors="replace"
-                    )
+                    text = self._stderr_log.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     text = ""
             if len(text) > 4096:
@@ -522,8 +518,7 @@ class BenchDeckTUI:
             f_judged = sum(1 for _, s in visible if s != "PENDING" and s != "BLOCKED")
             f_blocked = sum(1 for _, s in visible if s == "BLOCKED")
             header = (
-                f"Cases: {len(visible)} of {total} total · "
-                f"{f_judged} judged · {f_blocked} blocked"
+                f"Cases: {len(visible)} of {total} total · {f_judged} judged · {f_blocked} blocked"
             )
             if self._sort != "id":
                 header += f" · sort:{self._sort}"
@@ -567,10 +562,7 @@ class BenchDeckTUI:
                 # column 0). When the feature is on, `star` is
                 # either `*` (marked) or ` ` (unmarked), widening
                 # the prefix to 5 chars and shifting `>` to column 1.
-                if self.enable_batch_export:
-                    star = "*" if case_id in self._marked else " "
-                else:
-                    star = ""
+                star = ("*" if case_id in self._marked else " ") if self.enable_batch_export else ""
                 title = str(case.get("title", "Untitled"))
                 prefix = f"{star}{marker}{case_id:>2} "
                 available = max(8, width - len(prefix) - len(state) - 1)
@@ -589,10 +581,7 @@ class BenchDeckTUI:
                 marker = ">" if index == self.selected else " "
                 # P2-5: leading `*` on marked rows (gated; same
                 # semantics as the default-path branch above).
-                if self.enable_batch_export:
-                    star = "*" if case_id in self._marked else " "
-                else:
-                    star = ""
+                star = ("*" if case_id in self._marked else " ") if self.enable_batch_export else ""
                 title = str(case.get("title", "Untitled"))
                 prefix = f"{star}{marker}{case_id:>2} "
                 available = max(8, width - len(prefix) - len(state) - 1)
@@ -815,9 +804,7 @@ class BenchDeckTUI:
         ]
         for idx, cid in enumerate(marked_ids):
             case = cases_by_id[cid]
-            case_judgments = [
-                j for j in self.snapshot.judgments if j.get("case_id") == cid
-            ]
+            case_judgments = [j for j in self.snapshot.judgments if j.get("case_id") == cid]
             result = self._result_for(cid)
             lines += [
                 f"## Case {cid}: {case.get('title', 'Untitled')}",
@@ -1071,9 +1058,7 @@ def _wrap(text: str, width: int) -> list[str]:
     return textwrap.wrap(text, width=max(12, width - 1), replace_whitespace=False) or [""]
 
 
-def _section(
-    title: str, text: str, width: int, prefix: str = ""
-) -> list[str]:
+def _section(title: str, text: str, width: int, prefix: str = "") -> list[str]:
     """Wrap `text` into a section block with a `title` heading.
 
     The first line is the `title` (un-prefixed). The wrapped body

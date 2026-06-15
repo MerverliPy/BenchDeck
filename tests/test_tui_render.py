@@ -279,9 +279,7 @@ def test_overview_omits_pointer_when_zero() -> None:
     joined = "\n".join(lines)
     # The pointer line must NOT appear.
     assert "see Detail" not in joined
-    assert not any(
-        line.startswith("Infra failures:") and "see Detail" in line for line in lines
-    )
+    assert not any(line.startswith("Infra failures:") and "see Detail" in line for line in lines)
     # The always-on summary in the base header is still present and
     # unchanged (it shows the count "0" because infra == 0).
     assert "Infra failures: 0" in joined
@@ -941,11 +939,7 @@ def test_draw_scroll_indicator_at_top(make_fake_stdscr: Any) -> None:
         scroll=0,
         selected=0,
         snapshot=Snapshot(
-            plan={
-                "cases": [
-                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
-                ]
-            },
+            plan={"cases": [{"id": i, "title": f"Case {i}"} for i in range(1, 51)]},
         ),
     )
     stdscr = make_fake_stdscr(24, 80)
@@ -972,11 +966,7 @@ def test_draw_scroll_indicator_at_bottom(make_fake_stdscr: Any) -> None:
         # to the maximum position (49 - 20 + 2 = 31 = max_scroll).
         selected=49,
         snapshot=Snapshot(
-            plan={
-                "cases": [
-                    {"id": i, "title": f"Case {i}"} for i in range(1, 51)
-                ]
-            },
+            plan={"cases": [{"id": i, "title": f"Case {i}"} for i in range(1, 51)]},
         ),
     )
     stdscr = make_fake_stdscr(24, 80)
@@ -1032,6 +1022,7 @@ def test_line_attr_quoted_rating_not_colored() -> None:
 
 def test_line_attr_gate_pass_colored() -> None:
     """A line containing both 'Pass' and 'Gate' is colored (green pair)."""
+
     # Patch `curses.color_pair` to return a deterministic per-pair value
     # so we can both confirm the gate branch was hit and that the
     # resulting attribute is non-zero (i.e., the line is colored).
@@ -1687,9 +1678,7 @@ def test_case_list_filter_clears_status_on_escape() -> None:
     tui = _make_tui(
         enable_case_filter=True,
         tab=1,
-        snapshot=Snapshot(
-            plan={"cases": [{"id": 1, "title": "Only Case"}]}
-        ),
+        snapshot=Snapshot(plan={"cases": [{"id": 1, "title": "Only Case"}]}),
     )
     tui._filter = ""  # start with no filter
     # Open the filter prompt.
@@ -2034,9 +2023,11 @@ def test_init_colors_respects_no_color_env(monkeypatch: Any) -> None:
     color output."""
     monkeypatch.setenv("NO_COLOR", "1")
     tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
-    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
-        "benchdeck.tui.curses.start_color"
-    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
         result = tui._init_colors()
     # Returns False (no color).
     assert result is False
@@ -2051,9 +2042,11 @@ def test_init_colors_light_theme_swaps_pair_6() -> None:
     default dark palette (foreground rating color on
     `COLOR_BLACK` background)."""
     tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="light")
-    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
-        "benchdeck.tui.curses.start_color"
-    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
         result = tui._init_colors()
     assert result is True
     # Pair 6 was initialized with BLACK on WHITE.
@@ -2073,9 +2066,11 @@ def test_init_colors_dark_theme_unchanged() -> None:
     the default dark-mode palette and serves as documentation for
     callers who want to override the auto-detection."""
     tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="dark")
-    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
-        "benchdeck.tui.curses.start_color"
-    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
         result = tui._init_colors()
     assert result is True
     # Pair 6 is BLACK on CYAN (the current default).
@@ -2095,9 +2090,11 @@ def test_init_colors_default_auto_preserves_current_palette(
     provably unchanged."""
     monkeypatch.delenv("NO_COLOR", raising=False)
     tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
-    with patch("benchdeck.tui.curses.has_colors", return_value=True), patch(
-        "benchdeck.tui.curses.start_color"
-    ), patch("benchdeck.tui.curses.init_pair") as mock_init_pair:
+    with (
+        patch("benchdeck.tui.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.curses.start_color"),
+        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+    ):
         result = tui._init_colors()
     assert result is True
     # Pair 6 is BLACK on CYAN (the pre-P2-4 default).
