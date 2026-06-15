@@ -1,6 +1,6 @@
 # BenchDeck TUI — Structured Enhancement Plan
 
-**Target:** `src/benchdeck/tui.py` (783 lines as of post-P2-6) and its test surface.
+**Target:** `src/benchdeck/tui.py` (996 lines as of post-P2-1) and its test surface.
 **Scope:** TUI rendering and behavior only. Out-of-scope: schema, runner, gateway, dependencies, CI, packaging, screenshot regeneration.
 **Method:** Read-only evidence gathering from current source and tests, then a phased, risk-graded plan. No edits performed.
 
@@ -8,17 +8,17 @@
 
 ## 0. Current Status
 
-**Branch:** `main` (at `0237de3`, 3 commits ahead of `origin/main`; `tui/enhancement` is stale at `747268e`).
-**Last update:** post-P2-6 commit (2026-06-15).
+**Branch:** `main` (at `5398541`, 4 commits ahead of `origin/main`; `tui/enhancement` is stale at `747268e`).
+**Last update:** post-P2-1 commit (2026-06-15).
 
 | Phase | Status | Latest commit | Tests added | Production lines |
 |---|---|---|---:|---:|
 | Phase 0 | ✅ Complete | `d72033d` | +21 | 0 |
 | Phase 1 | ✅ Complete | `82b6c5c` | +13 | ~+113 |
-| Phase 2 | 🟡 In progress (2/6) | `0237de3` | +5 | +44 |
+| Phase 2 | 🟡 In progress (3/6) | `5398541` | +11 | +257 |
 | Phase 3 | ⏳ Not started | — | 0 | 0 |
 
-**Total so far:** 16 items implemented (8 P0 + 6 P1 + 2 P2), 39 new tests, 0 to ~+157 production lines. All 151 TUI + screenshot tests pass; golden baselines unchanged.
+**Total so far:** 17 items implemented (8 P0 + 6 P1 + 3 P2), 45 new tests, 0 to ~+370 production lines. All 157 TUI + screenshot tests pass; golden baselines unchanged.
 
 ### Completed commits (in execution order)
 
@@ -40,6 +40,7 @@
 | P1-4 | `f205e8a` | `│ ` glyph on `Test Prompt` and `Agent output` |
 | P2-3 | `28c52c8` | overview heartbeat — `Last refresh` + `Run alive` lines (3 tests; plan: 2) |
 | P2-6 | `0237de3` | infra-error pointer on Overview |
+| P2-1 | `5398541` | filter & sort on the Cases tab (6 tests; plan: 5) |
 
 ### Deviations from plan
 
@@ -50,13 +51,14 @@
 - **P1-2**: +1 test (`test_draw_title_omits_age_before_first_load`) for the `last_load > 0` guard.
 - **P1-4**: implementation also added a `Test Prompt` section to `_detail` (it was not previously rendered; the plan's wording assumed it was). The plan's stated test for the Test Prompt block would have failed otherwise.
 - **P2-3**: +1 test (`test_overview_omits_heartbeat_when_flag_disabled`) for the Phase 2 default-off contract guard. Asserts that with `enable_heartbeat=False` (the default), neither the `Last refresh` nor the `Run alive` line appears in `_overview`, even when `last_load > 0` and a subprocess is alive. This locks down the Phase 2 default-off guarantee and matches the P0/P1 pattern of adding regression guards for invariant branches.
+- **P2-1**: +1 test (`test_case_list_default_off_omits_filter_and_sort`) for the Phase 2 default-off contract guard. Asserts that with `enable_case_filter=False` (the default), `_case_list` ignores `_filter` and `_sort` and that the `f` / `s` keys are no-ops in `_handle_key`. The plan's "three new keybindings" wording is interpreted as two genuinely new keys (`f` to open the filter prompt, `s` to cycle sort) plus the transient use of existing `Enter` (apply) and `Esc` (cancel) inside the prompt — no third new keybinding is added. This matches the P0/P1 pattern of adding regression guards for invariant branches.
 
 ### Branch / merge history
 
-- `main` is currently at `0237de3` (post-P2-6 commit; 3 ahead of `origin/main`).
+- `main` is currently at `5398541` (post-P2-1 commit; 4 ahead of `origin/main`).
 - `tui/enhancement` is stale at `747268e` (Phase 2 work has landed on `main` directly).
-- Phase 0 and Phase 1 merges used `--no-ff` so per-item commit history is preserved under the merge commit. Phase 2 items so far (P2-3, P2-6) are individual commits on `main` — no Phase 2 merge commit yet.
-- Golden baselines at `assets/screenshots/golden/*.png` have not changed (Phase 0 + Phase 1 + P2-3 + P2-6 are content-only and default-off; no screenshot regeneration).
+- Phase 0 and Phase 1 merges used `--no-ff` so per-item commit history is preserved under the merge commit. Phase 2 items so far (P2-3, P2-6, P2-1) are individual commits on `main` — no Phase 2 merge commit yet.
+- Golden baselines at `assets/screenshots/golden/*.png` have not changed (Phase 0 + Phase 1 + P2-3 + P2-6 + P2-1 are content-only and default-off; no screenshot regeneration).
 
 ---
 
