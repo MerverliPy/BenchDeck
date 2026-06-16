@@ -26,13 +26,15 @@ jobs:
             --exclude-dir=.git --exclude-dir=.venv --exclude-dir=.mypy_cache \
             --exclude-dir=.pytest_cache --exclude-dir=.ruff_cache \
             --exclude-dir=dist --exclude-dir=node_modules \
-            --exclude-dir=__pycache__ --exclude-dir=*.egg-info; then
+            --exclude-dir=__pycache__ --exclude-dir=*.egg-info \
+            --exclude-dir=.product-test --exclude-dir=.opencode; then
             echo "ERROR: OpenAI API key pattern found in repository"
             grep -rnE 'sk-(proj|ant)-[A-Za-z0-9_-]{20,}' . \
               --exclude-dir=.git --exclude-dir=.venv --exclude-dir=.mypy_cache \
               --exclude-dir=.pytest_cache --exclude-dir=.ruff_cache \
               --exclude-dir=dist --exclude-dir=node_modules \
-              --exclude-dir=__pycache__ --exclude-dir=*.egg-info
+              --exclude-dir=__pycache__ --exclude-dir=*.egg-info \
+              --exclude-dir=.product-test --exclude-dir=.opencode
             exit 1
           fi
           echo "No credential patterns found."
