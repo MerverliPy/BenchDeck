@@ -21,8 +21,8 @@
 | **Baseline AGENT_HANDOFF.md** | 29,140 bytes, MD5 `830ad5d151620a459c82c86de0ca3bd8` |
 | **Working Tree** | **Clean.** No modified tracked files, no untracked files. |
 | **Stack** | Python 3.12.3 (runtime), Pydantic v2, OpenAI SDK v2 (`responses` API), curses TUI |
-| **Tests** | 349 passed, 2 skipped (351 total) |
-| **Coverage** | 81% (2,280 stmts, 432 missed) |
+| **Tests** | 408 passed, 2 skipped (410 total) |
+| **Coverage** | 84% (2,550 stmts, 400 missed) |
 | **Overall Health** | **Good with one critical finding.** Ruff clean, ruff format clean, mypy clean on `src/` (strict) and `tests/`, all prior findings resolved or intentionally deferred. **One plaintext credential found on disk (P0 — intentional/scoped via direnv).** |
 
 ### Git Log (recent)
@@ -403,7 +403,7 @@ grep -rE 'sk-(proj|ant)-[A-Za-z0-9_-]{20,}' . --exclude-dir=.git --exclude-dir=.
 git status  # should be clean
 ```
 
-**Expected results:** All clean; 349 tests pass (2 skipped); 81% coverage; schema in wheel; `sk-` pattern only in `.envrc` (gitignored); working tree clean.
+**Expected results:** All clean; 408 tests pass (2 skipped); 84% coverage; schema in wheel; `sk-` pattern only in `.envrc` (gitignored); working tree clean.
 
 ---
 

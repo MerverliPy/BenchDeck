@@ -1,7 +1,7 @@
 # BenchDeck — Remaining Issues
 
 **Date:** 2026-06-13
-**Baseline:** 352 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict on `src/` and `tests/`) · 81% coverage
+**Baseline:** 408 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict on `src/` and `tests/`) · 84% coverage
 **Status:** All Phase 1-7 features implemented. All 20 prior audit findings resolved and revalidated. 2026-06-13 full product test (run id `20260613T191610Z-a5e38c42`): 0 P0, 0 P1, 1 P2 (loader contract drift — resolved in commit `bcbf396` with `strict=True` opt-in), 5 P3 (3 environment-blocked, 1 spec conflict, 1 perf note). Live OpenAI evidence BLOCKED by sandbox network policy + no dedicated test key; Python 3.11/3.13 matrix BLOCKED by sandbox image (covered by CI on `push` to `main`).
 
 ---
@@ -72,4 +72,4 @@ python -m mypy --no-incremental src/benchdeck
 python -m pytest -q
 ```
 
-Expected: all clean, 352 tests passed (2 skipped) — 349 pre-existing + 3 new `test_loader.py` regression tests for SEC-004/005/006.
+Expected: all clean, 408 tests passed (2 skipped).

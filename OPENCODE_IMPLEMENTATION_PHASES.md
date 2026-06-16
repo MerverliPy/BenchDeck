@@ -38,13 +38,13 @@ pytest --cov=benchdeck --cov-branch --cov-report=term-missing
 python -m build
 
 KNOWN BASELINE (updated 2026-06-12)
-- 349 tests pass (2 skipped), 77% coverage.
+- 408 tests pass (2 skipped), 84% coverage.
 - ruff check, ruff format --check, and mypy (strict on `src/benchdeck` and `tests/`) all pass clean.
 - All Phase 0-7 work completed. 20 prior audit findings resolved and revalidated.
 - All known bugs from original audit resolved. See REMAINING_ISSUES.md for remaining limitations.
 - P1: Multi-judge aggregation and JSON Schema manifest validation implemented.
 - P2: Budget/cost controls implemented.
-- P3 items not yet implemented: package release publishing, signed artifacts, SBOM.
+- P3: CI workflows for package release publishing and signed artifacts (`publish.yml`, `release.yml`) are configured and ready; awaiting a `v*` tag push with PyPI setup.
 
 DELIVERY FORMAT
 For each phase:

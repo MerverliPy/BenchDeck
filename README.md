@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![CI](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-all%20passing-brightgreen.svg)](./.github/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-408%20passed%20(2%20skipped)-brightgreen.svg)](./.github/workflows/ci.yml)
 [![ruff](https://img.shields.io/badge/ruff-clean-000000.svg)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-clean-blue.svg)](https://mypy-lang.org)
 
@@ -18,11 +18,11 @@ BenchDeck turns one or two Markdown agent files into a benchmark plan, runs isol
 
 <img src="assets/screenshots/overview.png" alt="Overview screen" width="720">
 
-*Overview — progress bar, rating distribution, per-family scores, token usage*
+*Overview — progress bar, rating distribution, per-family scores, policy blocks, token usage*
 
 <img src="assets/screenshots/cases.png" alt="Case list" width="720">
 
-*Case list — per-agent ratings, blocked cases, pending items*
+*Case list — per-agent ratings, blocked cases, pending items, status marks*
 
 <img src="assets/screenshots/detail.png" alt="Case detail" width="720">
 
@@ -32,7 +32,27 @@ BenchDeck turns one or two Markdown agent files into a benchmark plan, runs isol
 
 *Help — phone-keyboard-friendly controls*
 
-*Screenshots are demo captures generated from synthetic data (`scripts/generate_demo_screens.py`).*
+*Captured from a live benchmark run (`gpt-4o-mini`, 8 cases, repository-integrity-agent). Regenerate with `scripts/generate_demo_screens.py --run-dir benchmark_out/<run_id>`.*
+
+### Benchmark Results
+
+A live benchmark of the included `repository-integrity-agent` against `gpt-4o-mini`:
+
+| Metric | Value |
+|---|---|
+| Cases planned | 8 |
+| Cases judged | 8 |
+| Excellent (4) | 2 |
+| Strong (3) | 1 |
+| Weak (1) | 1 |
+| Fail (0) | 4 |
+| Gate failures | 4 |
+| Total tokens | 37,463 |
+| API requests | 32 |
+| Wall-clock time | ~2 min 20 s |
+| Status | `completed_with_failures` |
+
+Run: `benchdeck run --agent-a examples/repository-integrity-agent.md --model gpt-4o-mini --judge-model gpt-4o-mini -o benchmark_out`
 
 ---
 
@@ -207,7 +227,7 @@ See `docs/architecture.md`, `docs/benchmark-contract.md`, and `docs/mobile-tui.m
 ## Limitations
 
 - **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`, supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing — see `docs/publish.md`) and release with SBOM (`release.yml`) exist; no tag has produced a successful publish yet.
-- **Inspector hardening pending.** `inspect.py` validates schema but not checksums, referential integrity, or counter consistency.
+- **Inspector hardening partial.** `inspect.py` validates schema and manifest checksums (via `manifest.verify()`); referential integrity and counter consistency checks remain pending.
 - **No cross-process run lock.** `storage.py` uses atomic writes (`os.replace`), but concurrent writers to the same output directory could race.
 - **No Windows testing.** Developed and tested on Linux only.
 - **No dependency lock file.** `requirements.txt` provides reproducible pins; no `requirements.lock` or `uv.lock` exists.
@@ -229,7 +249,7 @@ The [CHANGELOG](./CHANGELOG.md#known-issues-resolved-post-v010) lists issues res
 ruff check .                              # lint
 ruff format --check .                     # formatting
 mypy src/benchdeck/                       # type checking (strict; requires types-jsonschema in dev deps)
-pytest --cov=src/benchdeck --cov-report=term-missing  # 349 tests (2 skipped — live API only)
+pytest --cov=src/benchdeck --cov-report=term-missing  # 408 tests (2 skipped — live API only)
 ```
 
 Or use the Makefile:

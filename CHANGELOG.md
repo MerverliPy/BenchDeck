@@ -143,8 +143,8 @@
 
 ### Verification
 
-- 352 tests pass (2 skipped — pre-existing `OPENAI_API_KEY` conditional skips)
-- 81% coverage
+- 408 tests pass (2 skipped — pre-existing `OPENAI_API_KEY` conditional skips)
+- 84% coverage
 - `ruff check`, `ruff format --check`, `mypy src/benchdeck/` all clean
 - 2026-06-13 product test: 0 P0, 0 P1, 1 P2 (this fix), 5 P3
 
