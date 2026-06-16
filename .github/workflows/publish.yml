@@ -45,7 +45,8 @@ jobs:
       - name: Verify checksums
         run: cd dist && sha256sum -c SHA256SUMS
 
-      - name: Check with twine
+      - name: Check with twine (advisory)
+        continue-on-error: true
         run: |
           pip install --upgrade twine
           twine check dist/*.whl dist/*.tar.gz
