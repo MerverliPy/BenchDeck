@@ -213,7 +213,7 @@ CI workflows for PyPI publishing (`publish.yml`) and GitHub releases with SBOM (
 
 ### Risk: CI credential scan scope vs `.test-evidence/` (New, Low)
 
-The CI credential scan (`ci.yml:23-38`) does not exclude `.test-evidence/`. The directory contains a synthetic sentinel key (`sk-proj-test-1234567890abcdef`) from SEC-002 testing that matches the `sk-(proj|ant)-[A-Za-z0-9_-]{20,}` regex. Since `.test-evidence/` is gitignored and not tracked, CI checkouts will not include it. However, if a developer accidentally stages the directory, CI would catch it. This is actually a feature (defense-in-depth), not a bug.
+The CI credential scan (`ci.yml:23-38`) does not exclude `.test-evidence/`. The directory contains a synthetic sentinel key (`sk-proj-test-…abcdef`) from SEC-002 testing that matches the credential regex. Since `.test-evidence/` is gitignored and not tracked, CI checkouts will not include it. However, if a developer accidentally stages the directory, CI would catch it. This is actually a feature (defense-in-depth), not a bug.
 
 ---
 
@@ -273,7 +273,7 @@ The CI credential scan (`ci.yml:23-38`) does not exclude `.test-evidence/`. The 
 1. **The `.envrc` credential is intentional and scoped.** Verified by: committed gitignore, committed CI credential scan, direnv pattern. Treated as a documented P0 with acceptance criteria.
 2. **`mypy tests/` failure was a regression from prior audit — now resolved.** Prior audit at `b46c4ed` claimed mypy clean on tests/. New test code in `test_tui_render.py` (TUI Phase 2) and `test_loader.py` (loader strict mode) introduced 5 errors. Fixed by adding type annotations and `# type: ignore[attr-defined]` comments. CI only checks `src/`, so this went unnoticed until re-audit.
 3. **Working tree cleanliness confirmed.** Clean at `9c36db9`.
-4. **`.test-evidence/` contains synthetic sentinel, not real key.** `sk-proj-test-1234567890abcdef` is a test fixture. Gitignored, not tracked.
+4. **`.test-evidence/` contains synthetic sentinel, not real key.** `sk-proj-test-…abcdef` is a test fixture. Gitignored, not tracked.
 5. **`OPENCODE_IMPLEMENTATION_PHASES.md` stale claims resolved.** Commit `9c36db9` fixed lines 45-47.
 6. **TUI Phase 0-2 features are all default-off.** Default `benchdeck tui` invocation is provably unchanged. All new code paths gated behind `False`-default kwargs.
 7. **Python 3.12.3 at runtime** — CI covers 3.11-3.13; no version mismatch concerns.
