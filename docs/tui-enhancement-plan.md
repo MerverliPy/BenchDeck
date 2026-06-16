@@ -1,6 +1,9 @@
 # BenchDeck TUI — Structured Enhancement Plan
 
-**Target:** `src/benchdeck/tui.py` (1200 lines as of post-P2-4) and its test surface.
+> **Status (2026-06-15):** Phase 2 is complete (6/6). This document is retained as a historical
+> planning artifact. Phase 3 has not been started.
+
+**Target:** `src/benchdeck/tui.py` (1189 lines as of post-P2-4) and its test surface.
 **Scope:** TUI rendering and behavior only. Out-of-scope: schema, runner, gateway, dependencies, CI, packaging, screenshot regeneration.
 **Method:** Read-only evidence gathering from current source and tests, then a phased, risk-graded plan. No edits performed.
 
@@ -8,7 +11,7 @@
 
 ## 0. Current Status
 
-**Branch:** `main` (at `e3f1a93`, 7 commits ahead of `origin/main`; `tui/enhancement` is stale at `747268e`).
+**Branch:** `main` (at `e3f1a93`, 7 commits ahead of `origin/main`).
 **Last update:** post-P2-4 commit (2026-06-15). **Phase 2 is complete (6/6).**
 
 | Phase | Status | Latest commit | Tests added | Production lines |

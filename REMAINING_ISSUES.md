@@ -32,7 +32,7 @@
 | A1 | No logging infrastructure | Implemented: `src/benchdeck/logging_config.py` with structured JSON logging |
 | A2 | No configuration file support | Implemented: `src/benchdeck/config.py` supports TOML config files; `--planner-model`, budget CLI flags wired |
 | A3 | `models.py` is 689 lines / ~10 domains | Implemented: refactored into `models/` package (6 sub-modules: plan, execution, judgment, result, gateway, infra) |
-| A9 | Runner re-raises on infrastructure failure | Needs re-verification with current runner code |
+| A9 | Runner re-raises on infrastructure failure | Resolved: runner catches infrastructure failures, records them in `infrastructure_errors.json`, increments `metadata.infrastructure_failures`, and continues to the next case (see `runner.py:296-315`). |
 
 ---
 
@@ -55,7 +55,7 @@ All findings from the first 2026-06-12 audit round are resolved. See `AGENT_HAND
 ## Remaining Known Limitations
 
 - **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`, supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing — see `docs/publish.md`) and release with SBOM (`release.yml`) exist; no tag has produced a successful publish yet. The first tag push (`v0.1.2`) failed at the Trusted Publishing exchange because no PyPI publisher is configured for this repo yet.
-- **Inspector hardening pending.** `inspect.py` validates schema but not checksums, referential integrity, or counter consistency.
+- **Inspector hardening partial.** `inspect.py` validates schema and manifest checksums (via `manifest.verify()`); referential integrity and counter consistency checks remain pending.
 - **No cross-process run lock.** `storage.py` uses atomic writes but concurrent writers could race.
 - **No Windows testing.** Developed and tested on Linux only.
 - **No dependency lock file.** `requirements.txt` provides reproducible pins; no `requirements.lock` or `uv.lock`.

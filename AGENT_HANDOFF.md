@@ -257,7 +257,7 @@ The KNOWN BASELINE section still lists multi-judge aggregation, JSON Schema vali
 - `.venv/`, `__pycache__/`, `.mypy_cache/`, `.ruff_cache/`, `.pytest_cache/`, `.coverage`
 - `dist/` (build artifacts, gitignored — verified wheel contents only)
 - `.opencode/` (OpenCode agent config, not project source)
-- `benchmark_out/` (absent; gitignored)
+- `benchmark_out/` (exists on disk; gitignored, not tracked)
 - `assets/screenshots/` (binary images — not content-inspected)
 - `fixtures/original_run.zip` (binary archive)
 - `docs/benchmark-contract.md`, `docs/mobile-tui.md` (not re-read; unchanged since prior audit per metadata)

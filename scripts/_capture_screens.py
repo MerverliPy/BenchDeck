@@ -1,7 +1,9 @@
 """Capture real benchmark screenshots for the specified 4 tabs.
 
 Usage:
-    python scripts/_capture_screens.py
+    python scripts/_capture_screens.py [RUN_DIR]
+
+If RUN_DIR is not provided, uses the latest run in benchmark_out/.
 """
 
 from __future__ import annotations
@@ -27,7 +29,26 @@ from scripts.generate_demo_screens import (  # noqa: E402
 OUT_DIR = PROJECT_ROOT / "assets" / "screenshots"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-RUN_DIR = PROJECT_ROOT / "benchmark_out" / "20260612T172324.803315Z"
+
+def _resolve_run_dir(path_str: str | None) -> Path:
+    """Resolve the run directory from an explicit path or the latest in benchmark_out/."""
+    benchmark_out = PROJECT_ROOT / "benchmark_out"
+    if path_str:
+        run_dir = Path(path_str)
+        if not run_dir.is_absolute():
+            run_dir = PROJECT_ROOT / run_dir
+        return run_dir
+    if not benchmark_out.exists():
+        raise SystemExit(f"No benchmark_out/ directory found at {benchmark_out}")
+    runs = sorted(
+        [d for d in benchmark_out.iterdir() if d.is_dir()],
+        key=lambda d: d.name,
+        reverse=True,
+    )
+    if not runs:
+        raise SystemExit(f"No run directories found in {benchmark_out}")
+    return runs[0]
+
 
 WIDTH = 80
 FONT_SIZE = 15
@@ -68,8 +89,17 @@ SPECS = [
 
 
 def main() -> None:
-    print(f"Loading snapshot from {RUN_DIR}")
-    snapshot = load_snapshot(RUN_DIR)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Capture real benchmark screenshots")
+    parser.add_argument(
+        "run_dir", nargs="?", default=None, help="Path to a benchmark run directory"
+    )
+    args = parser.parse_args()
+
+    run_dir = _resolve_run_dir(args.run_dir)
+    print(f"Loading snapshot from {run_dir}")
+    snapshot = load_snapshot(run_dir)
 
     print(f"  status: {snapshot.metadata.get('status')}")
     print(f"  cases: {snapshot.metadata.get('cases_in_plan')}")

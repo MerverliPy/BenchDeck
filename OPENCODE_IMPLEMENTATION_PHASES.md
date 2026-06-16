@@ -194,7 +194,7 @@ Backward compatibility:
 - For v1 comparison artifacts with ambiguous judgments, mark attribution as unavailable and the comparison as invalid; do not guess.
 
 Primary files:
-- src/benchdeck/models.py
+- src/benchdeck/models/ (package with 6 sub-modules: plan, execution, judgment, result, gateway, infra)
 - src/benchdeck/runner.py
 - src/benchdeck/scoring.py
 - src/benchdeck/reporting.py
@@ -288,7 +288,7 @@ Structured output:
 
 Primary files:
 - src/benchdeck/openai_gateway.py
-- src/benchdeck/models.py
+- src/benchdeck/models/ (package with 6 sub-modules: plan, execution, judgment, result, gateway, infra)
 - src/benchdeck/runner.py
 - tests/test_gateway.py
 - tests/test_runner.py
@@ -533,7 +533,7 @@ Verification:
 ruff check .
 ruff format --check .
 mypy --no-incremental src/benchdeck tests
-pytest -q tests/test_budget.py tests/test_usage.py tests/test_gateway.py tests/test_runner.py
+pytest -q tests/test_budget.py tests/test_gateway.py tests/test_runner.py
 ```
 
 ---
@@ -596,7 +596,7 @@ Verification:
 ruff check .
 ruff format --check .
 mypy --no-incremental src/benchdeck tests
-pytest -q tests/test_tui.py tests/test_tui_loading.py
+pytest -q tests/test_tui_loading.py
 ```
 
 ---
