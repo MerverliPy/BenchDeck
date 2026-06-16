@@ -51,5 +51,23 @@ jobs:
           pip install --upgrade twine
           twine check dist/*.whl dist/*.tar.gz
 
-      - name: Publish to PyPI
+      - name: Select PyPI publish auth
+        id: pypi-auth
+        env:
+          HAS_TOKEN: ${{ secrets.PYPI_API_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" = "true" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to PyPI (API token)
+        if: ${{ steps.pypi-auth.outputs.mode == 'token' }}
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Publish to PyPI (Trusted Publishing)
+        if: ${{ steps.pypi-auth.outputs.mode == 'oidc' }}
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
