@@ -28,7 +28,7 @@ verify_sdist() {
     return 1
   fi
   local actual
-  actual="$(tar -xOzPf "${sdist}" --wildcards '*/PKG-INFO' 2>/dev/null | grep '^Version:' | awk '{print $2}' | tr -d '[:space:]')"
+  actual="$(tar -xOzPf "${sdist}" --wildcards '*/PKG-INFO' 2>/dev/null | grep -m1 '^Version:' | awk '{print $2}' | tr -d '[:space:]')"
   if [ "${actual}" != "${EXPECTED_VERSION}" ]; then
     echo "ERROR: Sdist PKG-INFO Version '${actual}' != expected '${EXPECTED_VERSION}'" >&2
     return 1
