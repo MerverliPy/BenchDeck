@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "repository": "MerverliPy/BenchDeck",
   "baseline_commit": "e3405fbd072f6213787d616b0c2636b11a2a4095",
   "sandbox": {
@@ -23,11 +23,20 @@
     "record_stdout": true,
     "record_stderr": true,
     "record_hashes": true,
-    "record_retry_history": true
+    "record_retry_history": true,
+    "manifest_file": "manifest.sha256",
+    "owner_only_writable": true,
+    "post_run_manifest_verification": true
   },
   "secrets": {
     "copy_into_general_sandbox": false,
     "live_key_file_env": "BENCHDECK_TEST_OPENAI_KEY_FILE",
+    "live_path_disabled_by_default": true,
+    "live_enable_env": "BENCHDECK_LIVE_ENABLED",
+    "secret_transport": "tempfile_bind_mount",
+    "secret_mount_path": "/run/secrets/api_key",
+    "container_key_env_deprecated": "OPENAI_API_KEY",
+    "container_key_file_env": "OPENAI_API_KEY_FILE",
     "require_mode_0600_or_stricter": true,
     "redact_patterns": [
       "sk-[A-Za-z0-9_-]{10,}"

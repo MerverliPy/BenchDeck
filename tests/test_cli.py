@@ -203,3 +203,43 @@ def test_python_m_benchdeck_help() -> None:
         text=True,
     )
     assert result.returncode == 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Config error diagnostics (Phase 3)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_cli_explicit_config_missing_exits_nonzero(tmp_path: Path) -> None:
+    agent = tmp_path / "agent.md"
+    agent.write_text("# Agent\n")
+    result = main(["--config", "/nonexistent/path/to/config.toml", "run", "--agent-a", str(agent)])
+    assert result == 1
+
+
+def test_cli_explicit_config_malformed_exits_nonzero(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.toml"
+    bad.write_text("this is not valid toml {{{")
+    agent = tmp_path / "agent.md"
+    agent.write_text("# Agent\n")
+    result = main(["--config", str(bad), "run", "--agent-a", str(agent)])
+    assert result == 1
+
+
+def test_cli_explicit_config_valid_works(tmp_path: Path) -> None:
+    good = tmp_path / "good.toml"
+    good.write_text('model = "gpt-4o"\n')
+    agent = tmp_path / "agent.md"
+    agent.write_text("# Agent\n")
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=True):
+        args = [
+            "--config",
+            str(good),
+            "run",
+            "--agent-a",
+            str(agent),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+        result = main(args)
+    assert result in (0, 2)

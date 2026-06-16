@@ -191,12 +191,15 @@ def _get_attr(obj: Any, name: str, default: Any = None) -> Any:
 
 
 class OpenAIGateway:
-    def __init__(self, config: GatewayConfig, client: OpenAI | None = None) -> None:
+    def __init__(
+        self, config: GatewayConfig, client: OpenAI | None = None, *, api_key: str | None = None
+    ) -> None:
         self.config = config
         if client is not None:
             self.client = client
         else:
             self.client = OpenAI(
+                api_key=api_key,
                 max_retries=0,
                 timeout=config.timeout_s,
                 default_headers=config.extra_headers or None,

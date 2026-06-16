@@ -8,6 +8,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .errors import (
+    CorruptArchiveError,
+    DuplicateBasenameError,
+    InvalidUtf8Error,
+    MalformedJsonError,
+    MemberCapExceededError,
+    MissingRequiredMemberError,
+    OversizeMemberError,
+)
+
 
 @dataclass
 class Snapshot:
@@ -59,7 +69,7 @@ def load_snapshot(run_path: Path, *, strict: bool = False) -> Snapshot:
         if segments:
             try:
                 encoded = "".join(part.read_text(encoding="ascii") for part in segments)
-                return _load_zip_bytes(base64.b64decode(encoded, validate=False))
+                return _load_zip_bytes(base64.b64decode(encoded, validate=False), strict=strict)
             except (OSError, ValueError):
                 if strict:
                     raise
@@ -93,14 +103,14 @@ def _load_dir_snapshot(run_path: Path) -> Snapshot:
 
 def _load_zip_snapshot(zip_path: Path, *, strict: bool = False) -> Snapshot:
     try:
-        return _load_zip_bytes(zip_path.read_bytes())
+        return _load_zip_bytes(zip_path.read_bytes(), strict=strict)
     except (OSError, ValueError):
         if strict:
             raise
         return Snapshot()
 
 
-def _load_zip_bytes(data: bytes) -> Snapshot:
+def _load_zip_bytes(data: bytes, *, strict: bool = False) -> Snapshot:
     defaults: dict[str, Any] = {
         "run_metadata.json": {},
         "benchmark_plan.json": {},
@@ -116,12 +126,12 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             raw_names = [name for name in archive.namelist() if not name.endswith("/")]
             if len(raw_names) > 1000:
-                raise ValueError(f"Archive has {len(raw_names)} members (cap is 1000)")
+                raise MemberCapExceededError(f"Archive has {len(raw_names)} members (cap is 1000)")
             members: dict[str, str] = {}
             for name in raw_names:
                 basename = Path(name).name
                 if basename in members:
-                    raise ValueError(
+                    raise DuplicateBasenameError(
                         f"Duplicate basename {basename!r} from paths "
                         f"{members[basename]!r} and {name!r}"
                     )
@@ -134,17 +144,40 @@ def _load_zip_bytes(data: bytes) -> Snapshot:
                 try:
                     info = archive.getinfo(member)
                     if info.file_size > 256 * 1024 * 1024:
-                        raise ValueError(
+                        raise OversizeMemberError(
                             f"Archive member {member!r} size {info.file_size} exceeds 256 MiB cap"
                         )
-                    loaded[filename] = json.loads(archive.read(member).decode("utf-8"))
-                except (KeyError, UnicodeDecodeError, json.JSONDecodeError):
-                    # Malformed or non-UTF-8 JSON content is not a security
-                    # violation; keep the legacy fail-safe default for resilience
-                    # (the TUI keeps rendering). It WILL be surfaced by strict
-                    # mode callers via the surrounding wrapper.
+                    raw_bytes = archive.read(member)
+                    try:
+                        text = raw_bytes.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        if strict:
+                            raise InvalidUtf8Error(
+                                f"Archive member {member!r} is not valid UTF-8"
+                            ) from exc
+                        loaded[filename] = default
+                        continue
+                    try:
+                        loaded[filename] = json.loads(text)
+                    except json.JSONDecodeError as exc:
+                        if strict:
+                            raise MalformedJsonError(
+                                f"Archive member {member!r} contains malformed JSON: {exc}"
+                            ) from exc
+                        loaded[filename] = default
+                except KeyError as exc:
+                    if strict:
+                        raise MissingRequiredMemberError(
+                            f"Archive member {member!r} is missing after enumeration"
+                        ) from exc
                     loaded[filename] = default
-    except (OSError, zipfile.BadZipFile):
+    except zipfile.BadZipFile as exc:
+        if strict:
+            raise CorruptArchiveError("Archive is not a valid ZIP file") from exc
+        loaded = defaults
+    except OSError as exc:
+        if strict:
+            raise CorruptArchiveError(f"Cannot read archive: {exc}") from exc
         loaded = defaults
     return Snapshot(
         metadata=loaded["run_metadata.json"],

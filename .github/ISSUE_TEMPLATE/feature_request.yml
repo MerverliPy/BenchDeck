@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a new feature or enhancement
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: |
+        What problem are you trying to solve? Describe the use case
+        and why the current behavior is insufficient.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like benchdeck to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you have tried.
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact on existing behavior
+      description: |
+        Would this change backward compatibility, output formats,
+        configuration, or CI? If so, how?
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: CLI (`benchdeck run`, `inspect`, `tui`)
+        - label: TUI (curses dashboard)
+        - label: Benchmark format / schemas
+        - label: Configuration
+        - label: Packaging / CI / release

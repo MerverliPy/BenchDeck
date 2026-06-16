@@ -1,3 +1,4 @@
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ def test_inspect_warns_when_judged_less_than_planned(monkeypatch: Any) -> None:
     snapshot = Snapshot(
         metadata={"cases_in_plan": 8, "executions_judged": 3},
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     assert report["planned_cases"] == 8
     assert report["judged_cases"] == 3
@@ -40,7 +41,7 @@ def test_inspect_warns_on_empty_final_output(monkeypatch: Any) -> None:
         metadata={"cases_in_plan": 1, "executions_judged": 1},
         results={"agent_a": [{"case_id": 1, "final_output": ""}]},
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     empty_warnings = [w for w in report["warnings"] if "empty final output" in w]
     assert len(empty_warnings) == 1
@@ -56,7 +57,7 @@ def test_inspect_warns_when_judge_transcript_equals_final_output(monkeypatch: An
             ]
         },
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     dup_warnings = [w for w in report["warnings"] if "judge_transcript" in w]
     assert len(dup_warnings) == 1
@@ -67,7 +68,7 @@ def test_inspect_warns_when_judgment_lacks_agent_label(monkeypatch: Any) -> None
         metadata={"cases_in_plan": 1, "executions_judged": 1},
         judgments=[{"case_id": 1, "overall_rating": "Strong"}],
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     label_warnings = [w for w in report["warnings"] if "agent_label" in w]
     assert len(label_warnings) == 1
@@ -79,7 +80,7 @@ def test_inspect_warns_when_tally_missing_score_scale(monkeypatch: Any) -> None:
         tally={"agent_a": {"rating_counts": {"Strong": 1}}},
         judgments=[{"case_id": 1, "overall_rating": "Strong", "agent_label": "agent_a"}],
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     scale_warnings = [w for w in report["warnings"] if "score scale" in w]
     assert len(scale_warnings) == 1
@@ -100,7 +101,7 @@ def test_inspect_warns_when_completed_with_policy_blocks(monkeypatch: Any) -> No
             }
         },
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     blocked_warnings = [
         w for w in report["warnings"] if "completed despite" in w.lower() or "blocked" in w.lower()
@@ -113,7 +114,7 @@ def test_inspect_warns_on_planner_validation_error(monkeypatch: Any) -> None:
         metadata={},
         planner_capture={"validation_error": "Missing required field: mode"},
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     val_warnings = [w for w in report["warnings"] if "Planner validation error" in w]
     assert len(val_warnings) == 1
@@ -143,7 +144,7 @@ def test_inspect_no_warnings_on_clean_snapshot(monkeypatch: Any) -> None:
             }
         },
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     assert len(report["warnings"]) == 0
 
@@ -162,7 +163,7 @@ def test_inspect_reports_infrastructure_errors(monkeypatch: Any) -> None:
             }
         ],
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     infra_warnings = [w for w in report["warnings"] if "Infrastructure error" in w]
     assert len(infra_warnings) == 1
@@ -180,7 +181,7 @@ def test_inspect_planner_terminal_error_warning(monkeypatch: Any) -> None:
             },
         },
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     assert report["planner_error"] is True
     planner_warnings = [w for w in report["warnings"] if "Planner terminal error" in w]
@@ -196,7 +197,7 @@ def test_inspect_planner_parse_error_warning(monkeypatch: Any) -> None:
             "parse_error": "Invalid JSON in planner response",
         },
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     assert report["planner_error"] is True
     planner_warnings = [w for w in report["warnings"] if "Planner parse error" in w]
@@ -211,7 +212,7 @@ def test_inspect_planner_mode_mismatch_warning(monkeypatch: Any) -> None:
         tally={},
         planner_capture={"value": {"mode": "comparison"}},
     )
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     assert report["planner_mode"] == "comparison"
     mismatch_warnings = [w for w in report["warnings"] if "mode mismatch" in w]
@@ -220,7 +221,7 @@ def test_inspect_planner_mode_mismatch_warning(monkeypatch: Any) -> None:
 
 def test_inspect_planner_no_error_when_empty(monkeypatch: Any) -> None:
     snapshot = Snapshot(metadata={}, planner_capture={})
-    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda _: snapshot)
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
     report = inspect_run(Path("/tmp/fake"))
     assert report["planner_error"] is False
     planner_warnings = [w for w in report["warnings"] if "Planner" in w]
@@ -233,3 +234,45 @@ def test_load_schema_returns_non_none() -> None:
     schema = _load_schema("summary_tally.schema.json")
     assert isinstance(schema, dict)
     assert "properties" in schema
+
+
+def test_inspect_reports_load_error_for_corrupt_zip(tmp_path: Path) -> None:
+    corrupt = tmp_path / "corrupt.zip"
+    corrupt.write_bytes(b"not a valid zip")
+
+    report = inspect_run(corrupt)
+    assert report["status"] == "unknown"
+    assert report["planned_cases"] == 0
+    load_warnings = [w for w in report["warnings"] if "Load error:" in w]
+    assert len(load_warnings) == 1
+    assert "not a valid ZIP" in load_warnings[0]
+
+
+def test_inspect_reports_load_error_for_malformed_json(tmp_path: Path) -> None:
+    z = tmp_path / "badjson.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("run_metadata.json", b"[oops}")
+
+    report = inspect_run(z)
+    load_warnings = [w for w in report["warnings"] if "Load error:" in w]
+    assert len(load_warnings) == 1
+    assert "malformed json" in load_warnings[0].lower()
+
+
+def test_inspect_surfaces_parse_cause_in_warning(tmp_path: Path) -> None:
+    z = tmp_path / "badutf8.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("run_metadata.json", b"\x80\x81\x82")
+
+    report = inspect_run(z)
+    load_warnings = [w for w in report["warnings"] if "Load error:" in w]
+    assert len(load_warnings) == 1
+    assert "UTF-8" in load_warnings[0]
+
+
+def test_original_run_zip_still_loads_clean_strict() -> None:
+    report = inspect_run(FIXTURE)
+    assert report["status"] == "completed"
+    assert report["planned_cases"] == 8
+    assert report["judged_cases"] == 8
+    assert len(report["warnings"]) == 0

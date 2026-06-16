@@ -102,20 +102,21 @@ Expected: `dist/benchdeck-<version>-py3-none-any.whl` and
 `dist/benchdeck-<version>.tar.gz` are produced and `twine check` reports
 `PASSED` for both.
 
-## Re-tagging after fixing the publish step
+## Published versions are immutable
 
-`v0.1.2` is already pushed. To re-attempt the publish without bumping the
-version, **delete the tag locally and remotely and re-push**:
+Once a version tag is pushed and the package is published to PyPI, the version
+must **never** be deleted, re-tagged, or re-published. If a publish step fails,
+fix the workflow and bump the version in `pyproject.toml` (following the
+`NEXT_VERSION` gate comment at the top of that file). Do not delete the tag
+and re-push.
 
-```bash
-git tag -d v0.1.2
-git push origin :refs/tags/v0.1.2
-git tag v0.1.2
-git push origin v0.1.2
-```
+## Release flow (Phase 1)
 
-(Only do this after the `twine upload` is genuinely working — otherwise the
-re-tag wastes a CI run.)
+A unified build workflow (`.github/workflows/_build.yml`) builds the wheel and
+sdist exactly once, runs the full test suite, and uploads the artifacts as an
+immutable workflow artifact. The `publish.yml` and `release.yml` workflows
+consume this single artifact — no rebuilding occurs per destination. See each
+workflow file for the exact steps.
 
 ## Switching between paths
 

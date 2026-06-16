@@ -76,6 +76,7 @@ class BenchmarkRunner:
         budget: BudgetLimits | None = None,
         resume_from: Path | None = None,
         num_judges: int = 1,
+        api_key: str | None = None,
     ) -> None:
         self.agent_a_path = agent_a_path
         self.agent_b_path = agent_b_path
@@ -88,8 +89,10 @@ class BenchmarkRunner:
         self._planner_model = _planner_model
         self._gw_timeout = _gw_timeout
         self._gw_retries = _gw_retries
+        self._api_key = api_key
         self.agent_gateway = agent_gateway or OpenAIGateway(
-            GatewayConfig(model=model, timeout_s=_gw_timeout, max_retries=_gw_retries)
+            GatewayConfig(model=model, timeout_s=_gw_timeout, max_retries=_gw_retries),
+            api_key=api_key,
         )
         self.judge_gateway = judge_gateway or OpenAIGateway(
             GatewayConfig(
@@ -98,7 +101,8 @@ class BenchmarkRunner:
                 max_retries=_gw_retries,
                 use_structured_output=True,
                 json_schema=JUDGE_OUTPUT_SCHEMA,
-            )
+            ),
+            api_key=api_key,
         )
         self._shutdown = False
         self.num_judges = max(1, num_judges)
@@ -452,7 +456,8 @@ class BenchmarkRunner:
                     max_retries=self._gw_retries,
                     use_structured_output=True,
                     json_schema=PLANNER_OUTPUT_SCHEMA,
-                )
+                ),
+                api_key=self._api_key,
             )
         gen_result = planner.generate_json(
             instructions=PLANNER_INSTRUCTIONS,

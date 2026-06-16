@@ -27,6 +27,47 @@ def append_record(evidence_dir: Path, record: dict[str, Any]) -> Path:
     return output
 
 
+def generate_manifest(directory: Path, manifest_name: str = "manifest.sha256") -> Path:
+    lines: list[str] = []
+    for fpath in sorted(directory.rglob("*")):
+        if fpath.is_file() and fpath.name != manifest_name:
+            rel = fpath.relative_to(directory)
+            h = sha256_file(fpath)
+            lines.append(f"{h}  {rel}")
+    manifest_path = directory / manifest_name
+    manifest_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return manifest_path
+
+
+def verify_manifest(directory: Path, manifest_name: str = "manifest.sha256") -> tuple[bool, list[str]]:
+    manifest_path = directory / manifest_name
+    if not manifest_path.is_file():
+        return False, ["Manifest file not found"]
+    errors: list[str] = []
+    expected: dict[str, str] = {}
+    for line in manifest_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        h, sep, rel = line.partition("  ")
+        if sep:
+            expected[rel] = h
+    actual_files: set[str] = set()
+    for fpath in sorted(directory.rglob("*")):
+        if fpath.is_file() and fpath != manifest_path:
+            rel = str(fpath.relative_to(directory))
+            actual_files.add(rel)
+            actual_hash = sha256_file(fpath)
+            if rel not in expected:
+                errors.append(f"Missing from manifest: {rel}")
+            elif expected[rel] != actual_hash:
+                errors.append(f"Hash mismatch: {rel}")
+    for rel in expected:
+        if rel not in actual_files:
+            errors.append(f"Missing from filesystem: {rel}")
+    return len(errors) == 0, errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, required=True)

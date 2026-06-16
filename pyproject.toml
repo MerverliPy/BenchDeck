@@ -4,7 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "benchdeck"
-version = "0.1.0"
+# NEXT_VERSION: UNBLOCKED_WHEN_REMOTE_TAG_AND_PYPI_VERIFIED
+# Before changing this value, a human reviewer must confirm:
+#   1. `git ls-remote --tags origin` shows no conflicting tag
+#   2. https://pypi.org/p/benchdeck/ shows no conflicting release
+#   3. The tag (v<VERSION>) will be compared against this field at build time
+#      by .github/scripts/verify-version-match.sh
+#   Reviewed 2026-06-16: remote tags v0.1.1, v0.1.2 exist but were never
+#   published to PyPI (project does not exist). v0.1.3 is the next version.
+version = "0.1.3"
 description = "Evidence-preserving LLM agent benchmark harness with a live mobile-first SSH TUI."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -44,6 +52,7 @@ benchdeck = ["schemas/*.json", "py.typed"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [tool.ruff]
 line-length = 100

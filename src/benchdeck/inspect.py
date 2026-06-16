@@ -7,6 +7,7 @@ from typing import Any
 
 from jsonschema import ValidationError, validate
 
+from .errors import LoadError
 from .loader import _sum_tally_int, load_snapshot
 from .manifest import Manifest
 
@@ -25,7 +26,21 @@ def _load_schema(name: str) -> dict[str, Any] | None:
 
 
 def inspect_run(run_dir: Path) -> dict[str, Any]:
-    snapshot = load_snapshot(run_dir)
+    try:
+        snapshot = load_snapshot(run_dir, strict=True)
+    except LoadError as exc:
+        return {
+            "run_dir": str(run_dir),
+            "status": "unknown",
+            "planned_cases": 0,
+            "judged_cases": 0,
+            "policy_blocks": 0,
+            "planner_mode": None,
+            "planner_attempts": 0,
+            "planner_http_attempts": 0,
+            "planner_error": False,
+            "warnings": [f"Load error: {exc}"],
+        }
     metadata = snapshot.metadata
     tally = snapshot.tally
     warnings: list[str] = []

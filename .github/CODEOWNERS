@@ -1,0 +1,34 @@
+# CODEOWNERS patterns for BenchDeck
+#
+# NOTE: CODEOWNERS enforcement and required reviews must be verified
+# in GitHub repository Settings → Branches → Branch protection rules.
+# Placeholder entries use the repository owner until GitHub teams exist.
+# Hosted enforcement cannot be validated from repository contents alone.
+
+# Source and core model
+src/benchdeck/        @MerverliPy
+
+# Tests
+tests/                @MerverliPy
+
+# CI / workflows
+.github/workflows/    @MerverliPy
+
+# Build and packaging
+pyproject.toml        @MerverliPy
+Makefile              @MerverliPy
+
+# OpenCode agents, skills, commands
+.opencode/            @MerverliPy
+
+# Product-test infrastructure
+.product-test/        @MerverliPy
+
+# Documentation
+docs/                 @MerverliPy
+
+# Security-sensitive files
+SECURITY.md           @MerverliPy
+GOVERNANCE.md         @MerverliPy
+CODE_OF_CONDUCT.md    @MerverliPy
+CONTRIBUTING.md       @MerverliPy

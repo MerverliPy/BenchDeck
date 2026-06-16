@@ -576,6 +576,36 @@ exit
 
 **Verify**: mark `<!-- step-5.5: done -->`.
 
+### Step 5.6 — Runner isolation model
+
+<!-- step-5.6: done -->
+
+This runner is provisioned as a **persistent systemd service**. It is NOT
+configured for JIT/ephemeral one-job registration. After each workflow job:
+
+- The runner process persists and accepts further jobs.
+- Host state (cached registrations, Docker images, `_work/` clones) is NOT
+  wiped between jobs.
+- Repository-controlled Python (`python3 .product-test/scripts/...`) executes
+  on the bare host before the disposable Docker sandbox boundary is
+  established (see Phase 0 containment).
+
+**Target state (not yet proven):**
+- Register the runner as a JIT runner (`./config.sh --jit`) so it accepts
+  exactly one job and then de-registers.
+- After each job, recreate the WSL2 host from a clean snapshot or a
+  pre-built image.
+
+**Current mitigations:**
+- The `benchdeck-product-test.yml` workflow is `workflow_dispatch` only
+  (not automatic on push/PR).
+- The workflow requires a `product-test` environment (requires approval
+  if protected-environment rules are configured).
+- The sandbox container is created afresh for each run and destroyed
+  afterwards (`--purge`), isolating the actual test execution.
+
+**Verify**: mark `<!-- step-5.6: done -->`.
+
 ---
 
 # Phase 6 — First end-to-end workflow run (offline path)

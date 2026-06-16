@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from .config import load_config
 from .inspect import inspect_run
@@ -145,14 +146,29 @@ def main(argv: list[str] | None = None) -> int:
         log_file=args.log_file if hasattr(args, "log_file") else None,
         json_format=bool(args.log_file if hasattr(args, "log_file") else None),
     )
-    cfg = load_config(args.config if hasattr(args, "config") else None)
+    cfg: dict[str, Any] = {}
+    try:
+        cfg = load_config(args.config if hasattr(args, "config") else None)
+    except (FileNotFoundError, PermissionError, ValueError, OSError) as exc:
+        print(f"Config error: {exc}", file=sys.stderr)
+        return 1
     if cfg:
         logger.debug("Loaded config: %s", cfg)
 
     if args.command == "run":
-        if not os.environ.get("OPENAI_API_KEY"):
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            key_file = os.environ.get("OPENAI_API_KEY_FILE")
+            if key_file:
+                try:
+                    api_key = Path(key_file).read_text(encoding="utf-8").strip()
+                except OSError:
+                    print(f"Error: Cannot read key file: {key_file}", file=sys.stderr)
+                    return 1
+        if not api_key:
             print("Error: OPENAI_API_KEY environment variable is not set.", file=sys.stderr)
             print("Set it with: export OPENAI_API_KEY='sk-...'", file=sys.stderr)
+            print("Or set OPENAI_API_KEY_FILE to a file containing the key.", file=sys.stderr)
             return 1
         from .budget import BudgetLimits
         from .runner import BenchmarkRunner
@@ -194,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
             budget=budget,
             resume_from=args.resume,
             num_judges=args.judges,
+            api_key=api_key,
         )
         status = runner.run()
         print(status.value)
@@ -220,6 +237,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Policy blocks: {result['policy_blocks']}")
             for warning in result["warnings"]:
                 print(f"- {warning}")
+        load_errors = [w for w in result["warnings"] if w.startswith("Load error:")]
+        if load_errors:
+            for err in load_errors:
+                print(err, file=sys.stderr)
+            return 2
         return 1 if result["warnings"] else 0
     return 2
 

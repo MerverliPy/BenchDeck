@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+## 0.1.3 — 2026-06-16
+
+### Added (Phase 3 — governance and configuration diagnostics)
+
+- **Contributor governance.** `.github/CODEOWNERS`, issue templates (bug report,
+  feature request), `.github/PULL_REQUEST_TEMPLATE.md`, `CODE_OF_CONDUCT.md`,
+  `GOVERNANCE.md`, and `.github/dependabot.yml` (pip + GitHub Actions, weekly).
+  Placeholder owner entries are used until GitHub teams exist; hosted enforcement
+  must be verified separately in repository settings.
+- **Explicit config diagnostics.** `--config` with a missing, unreadable, or
+  malformed TOML file now fails with a nonzero exit code and a precise diagnostic
+  (path + reason). The configuration value is never echoed in the error.
+- **Implicit config warnings.** Malformed or unreadable `~/.config/benchdeck/...`
+  or `./benchdeck.toml` files emit Python warnings instead of silently skipping.
+- **Unknown key validation.** Unrecognized top-level config keys produce a
+  warning listing the unknown key(s).
+- **New tests.** `tests/test_governance.py` (21 YAML parse + existence tests),
+  12 config diagnostics tests, and 3 CLI config-error integration tests.
+
+### Changed (Phase 1 — release integrity and strict inspection)
+
+- **Single-source version gates.** A `NEXT_VERSION` gate in `pyproject.toml` and
+  `.github/scripts/verify-version-match.sh` compare the Git tag with package
+  metadata at build time. `.github/scripts/verify-build-metadata.sh` asserts
+  that wheel `METADATA` and sdist `PKG-INFO` match the declared version.
+- **Workflow permissions least-privilege.** `publish.yml` and `release.yml`
+  now explicitly request `contents: read`; `contents: write` is scoped to the
+  job level in `release.yml`. `ci.yml` no longer requests unused
+  `pull-requests: write`.
+- **Immutable action references.** All external `uses:` references must be
+  pinned to a full 40-character commit SHA. A `WORKFLOW_SHA_CHECKLIST.md`
+  blocks the release until each SHA is verified. `tests/test_workflow_policy.py`
+  enforces this at test time.
+- **Build-once, attest-once.** A new reusable `_build.yml` workflow builds
+  wheel and sdist exactly once. `publish.yml` and `release.yml` consume the
+  same immutable artifact, verifying the digest before publication. No
+  rebuilding occurs per destination.
+- **Strict archive inspection.** `_load_zip_bytes` and `load_snapshot` now
+  propagate `strict=True` with precise error classes (`CorruptArchiveError`,
+  `MalformedJsonError`, `InvalidUtf8Error`, `MissingRequiredMemberError`,
+  `DuplicateBasenameError`, `MemberCapExceededError`, `OversizeMemberError`).
+  `inspect_run` passes `strict=True` and surfaces the specific cause in its
+  warning list.
+- **CLI inspect exits 2 with cause.** When `inspect` encounters a corrupt or
+  malformed archive, it prints the load error to stderr and exits 2 instead of
+  silently reporting `status: unknown`.
+- **Runner isolation documented.** `docs/runner-setup.md` and the product-test
+  workflow now document that the runner is a persistent systemd service (not
+  JIT/ephemeral). The workflow requires a `product-test` environment. Host-level
+  Python execution before the sandbox boundary is explicitly noted as a
+  mitigation gap.
+- **Removed tag-deletion advice.** `docs/publish.md` no longer recommends
+  deleting and re-creating a published tag. Published versions are immutable.
+- **New tests:** `tests/test_workflow_policy.py` (SHA pinning + permissions),
+  `tests/test_version.py` (version normalization + metadata),
+  `tests/test_build.py` (wheel/sdist idempotency + metadata).
+
 ### Added
 
 - **Phase 2 TUI enhancements (all default-off, opt-in via constructor
