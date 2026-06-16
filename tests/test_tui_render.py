@@ -1071,7 +1071,7 @@ def test_poll_subprocess_nonzero_reports_log(tmp_path: Path) -> None:
     assert tui._stderr_log is not None
     log_name = tui._stderr_log.name
     # Override poll() to report a non-zero exit.
-    tui._proc.poll.return_value = 1
+    tui._proc.poll.return_value = 1  # type: ignore[attr-defined]
 
     tui._poll_subprocess()
 
@@ -1097,7 +1097,7 @@ def test_poll_subprocess_zero_clears_proc(tmp_path: Path) -> None:
         tui._launch_run()
     assert tui._proc is not None
     # Override poll() to report a clean exit.
-    tui._proc.poll.return_value = 0
+    tui._proc.poll.return_value = 0  # type: ignore[attr-defined]
 
     tui._poll_subprocess()
 

@@ -46,7 +46,7 @@ All findings from the first 2026-06-12 audit round are resolved. See `AGENT_HAND
 | AUD-P2-001 | P2 | String `"timeout"` where `ErrorCategory.TIMEOUT` expected (FIXED) |
 | AUD-P2-002 | P2 | `sys.path.insert()` hack in test_screenshots.py (FIXED) |
 | AUD-P3-001 | P3 | Stale docs: this file and IMPLEMENTATION_CHECKLIST.md (FIXED) |
-| AUD-P3-002 | P3 | ~16 mypy errors in `tests/` (FIXED — mypy clean on `src/` and `tests/` in strict mode) |
+| AUD-P3-002 | P3 | ~16 mypy errors in `tests/` (FIXED — mypy clean on `src/` and `tests/` in strict mode; transient regression in `test_tui_render.py` and `test_loader.py` resolved) |
 | AUD-P3-003 | P3 | `__main__.py` 0% test coverage (NOTED — entry point; covered by CLI integration tests) |
 | AUD-P3-004 | P3 | `duplicate_keys` always empty in CoverageReport (FIXED) |
 

@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import struct
 import zipfile
+from pathlib import Path
 
 from benchdeck.loader import load_snapshot
 
 
-def test_load_snapshot_strict_raises_on_oversized_zip(tmp_path):
+def test_load_snapshot_strict_raises_on_oversized_zip(tmp_path: Path) -> None:
     """SEC-005 regression: 256 MiB+1 byte member should raise ValueError in strict mode."""
     huge_zip = tmp_path / "huge.zip"
     # Use a real loader-known filename so the size check is reached
@@ -42,7 +43,7 @@ def test_load_snapshot_strict_raises_on_oversized_zip(tmp_path):
         load_snapshot(huge_zip, strict=True)
 
 
-def test_load_snapshot_strict_raises_on_duplicate_basenames(tmp_path):
+def test_load_snapshot_strict_raises_on_duplicate_basenames(tmp_path: Path) -> None:
     """SEC-006 regression: duplicate basenames should raise ValueError in strict mode."""
     z = tmp_path / "dup.zip"
     with zipfile.ZipFile(z, "w") as zf:
@@ -57,7 +58,7 @@ def test_load_snapshot_strict_raises_on_duplicate_basenames(tmp_path):
         load_snapshot(z, strict=True)
 
 
-def test_load_snapshot_strict_raises_on_overcap(tmp_path):
+def test_load_snapshot_strict_raises_on_overcap(tmp_path: Path) -> None:
     """SEC-004 regression: >1000 members should raise ValueError in strict mode."""
     z = tmp_path / "overcap.zip"
     with zipfile.ZipFile(z, "w") as zf:
