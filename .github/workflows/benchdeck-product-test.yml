@@ -13,6 +13,9 @@ on:
           - "3.12"
           - "3.13"
       run_live_openai:
+        # Fixture-based steps validate tool format compatibility and subprocess
+        # control. Behavioral correctness (real LLM planning, judging, and
+        # evidence preservation) requires enabling this option with a valid key.
         description: Run the budget-limited real OpenAI validation
         required: true
         type: boolean
@@ -97,6 +100,37 @@ jobs:
           run_inside LOCAL_BLACK_BOX_EVIDENCE "benchdeck --help"
           run_inside LOCAL_BLACK_BOX_EVIDENCE "benchdeck inspect fixtures/original_run.zip"
           run_inside LOCAL_BLACK_BOX_EVIDENCE "benchdeck inspect fixtures/original_run.zip --json"
+
+          # Synthetic-defect validation: prove the inspector catches real defects,
+          # not just that it passes the clean mock-generated fixture. Creates a
+          # ZIP with incomplete coverage (3 of 8 cases judged) and asserts the
+          # inspector reports the expected warning.
+          run_inside LOCAL_BLACK_BOX_EVIDENCE 'python3 -c "
+          import json, tempfile, zipfile, sys
+          from pathlib import Path
+
+          tmp = Path(tempfile.mkdtemp())
+          meta = {\"status\": \"completed\", \"cases_in_plan\": 8, \"executions_judged\": 3}
+          (tmp / \"run_metadata.json\").write_text(json.dumps(meta))
+          (tmp / \"case_judgments.json\").write_text(json.dumps([]))
+          (tmp / \"benchmark_plan.json\").write_text(json.dumps({\"mode\": \"single\", \"cases\": []}))
+          (tmp / \"summary_tally.json\").write_text(json.dumps({}))
+          (tmp / \"run_results.json\").write_text(json.dumps({}))
+          zpath = tmp / \"defective.zip\"
+          with zipfile.ZipFile(zpath, \"w\") as zf:
+              for p in tmp.glob(\"*.json\"):
+                  zf.write(p, p.name)
+          # Import and run inspect
+          sys.path.insert(0, \"src\")
+          from benchdeck.inspect import inspect_run
+          report = inspect_run(zpath)
+          warnings = report.get(\"warnings\", [])
+          coverage_warns = [w for w in warnings if \"Only 3 of 8\" in w]
+          if not coverage_warns:
+              print(f\"FAIL: expected coverage warning, got: {warnings}\")
+              sys.exit(1)
+          print(f\"PASS: inspector correctly reported: {coverage_warns[0]}\")
+          "'
 
       - name: Run real PTY smoke validation
         shell: bash

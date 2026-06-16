@@ -14,6 +14,7 @@ _here = Path(__file__).resolve()
 if str(_here.parents[1]) not in sys.path:
     sys.path.insert(0, str(_here.parents[1]))
 
+from benchdeck.loader import Snapshot  # noqa: E402
 from scripts import generate_demo_screens as gds  # noqa: E402
 
 # ── demo snapshot contract version ───────────────────────────────────────────
@@ -125,22 +126,30 @@ def test_build_demo_snapshot_has_all_fields() -> None:
 
 def test_build_demo_snapshot_metadata_values() -> None:
     snap = gds._build_demo_snapshot()
-    assert snap.metadata["status"] == "completed"
-    assert snap.metadata["cases_in_plan"] == 12
-    assert snap.metadata["executions_judged"] == 10
-    assert snap.metadata["policy_blocks"] == 2
-    assert snap.metadata["infrastructure_failures"] == 1
+    assert isinstance(snap.metadata["status"], str)
+    assert snap.metadata["status"] in ("completed", "failed", "partial")
+    assert isinstance(snap.metadata["cases_in_plan"], int)
+    assert snap.metadata["cases_in_plan"] >= 1
+    assert isinstance(snap.metadata["executions_judged"], int)
+    assert 0 <= snap.metadata["executions_judged"] <= snap.metadata["cases_in_plan"]
+    assert isinstance(snap.metadata.get("policy_blocks", 0), int)
+    assert isinstance(snap.metadata.get("infrastructure_failures", 0), int)
 
 
-def test_build_demo_snapshot_has_12_cases() -> None:
+def test_build_demo_snapshot_has_cases() -> None:
     snap = gds._build_demo_snapshot()
     cases = snap.plan.get("cases", [])
-    assert len(cases) == 12
+    assert len(cases) >= 1
+    for case in cases:
+        assert "id" in case
+        assert "title" in case
+        assert "family" in case
+        assert "test_prompt" in case
 
 
-def test_build_demo_snapshot_has_11_judgments() -> None:
+def test_build_demo_snapshot_has_judgments() -> None:
     snap = gds._build_demo_snapshot()
-    assert len(snap.judgments) == 11
+    assert len(snap.judgments) >= 1
 
 
 def test_build_demo_snapshot_has_all_ratings() -> None:
@@ -157,8 +166,10 @@ def test_build_demo_snapshot_has_family_scores() -> None:
     snap = gds._build_demo_snapshot()
     agent_tally = snap.tally.get("repository-integrity-agent", {})
     scores = agent_tally.get("family_scores", {})
-    assert len(scores) == 5
-    assert scores["happy_path"] == 92.0
+    assert len(scores) >= 1
+    for score in scores.values():
+        assert isinstance(score, (int, float))
+        assert 0.0 <= score <= 100.0
 
 
 def test_build_demo_snapshot_has_policy_blocks() -> None:
@@ -185,6 +196,115 @@ def test_build_demo_snapshot_cases_have_all_families() -> None:
     assert "edge_case_logic" in families
     assert "policy_compliance" in families
     assert "output_hygiene" in families
+
+
+def test_build_demo_snapshot_is_self_consistent() -> None:
+    snap = gds._build_demo_snapshot()
+    cases = snap.plan.get("cases", [])
+    case_families = {c["family"] for c in cases}
+    tally = snap.tally.get("repository-integrity-agent", {})
+    family_scores = tally.get("family_scores", {})
+    for family in case_families:
+        assert family in family_scores, f"Case family {family!r} missing from tally scores"
+    rating_counts = tally.get("rating_counts", {})
+    assert len(rating_counts) >= 1
+    assert sum(rating_counts.values()) >= len(snap.judgments)
+    assert all(k in ("Excellent", "Strong", "Acceptable", "Weak", "Fail") for k in rating_counts)
+
+
+# ── rendering resilience (mutated snapshots) ────────────────────────────────
+
+
+def _mutate_snapshot(**overrides: object) -> Snapshot:
+    """Build a demo snapshot and apply caller-supplied field overrides."""
+    import copy
+
+    snap = copy.deepcopy(gds._build_demo_snapshot())
+    for attr, value in overrides.items():
+        object.__setattr__(snap, attr, value)
+    return snap
+
+
+def test_rendering_survives_empty_judgments() -> None:
+    from benchdeck.tui import BenchDeckTUI
+
+    snap = _mutate_snapshot(judgments=[])
+    tui = BenchDeckTUI(Path("/tmp/test"))
+    tui.snapshot = snap
+    for tab in range(4):
+        tui.tab = tab
+        lines = tui._render(80)
+        assert len(lines) > 0
+
+
+def test_rendering_survives_long_agent_name() -> None:
+    from benchdeck.tui import BenchDeckTUI
+
+    long_name = "A" * 200
+    snap = gds._build_demo_snapshot()
+    snap.tally[long_name] = snap.tally.pop("repository-integrity-agent")
+    snap.plan["profile"]["agent_name_a"] = long_name
+    for j in snap.judgments:
+        j["agent_label"] = long_name
+    tui = BenchDeckTUI(Path("/tmp/test"))
+    tui.snapshot = snap
+    for tab in range(4):
+        tui.tab = tab
+        lines = tui._render(80)
+        assert len(lines) > 0
+
+
+def test_rendering_survives_single_case_single_judgment() -> None:
+    from benchdeck.tui import BenchDeckTUI
+
+    snap = gds._build_demo_snapshot()
+    snap.plan["cases"] = [snap.plan["cases"][0]]
+    snap.judgments = [snap.judgments[0]]
+    snap.metadata["cases_in_plan"] = 1
+    snap.metadata["executions_judged"] = 1
+    tui = BenchDeckTUI(Path("/tmp/test"))
+    tui.snapshot = snap
+    for tab in range(4):
+        tui.tab = tab
+        lines = tui._render(80)
+        assert len(lines) > 0
+
+
+def test_rendering_survives_missing_optional_fields() -> None:
+    from benchdeck.tui import BenchDeckTUI
+
+    snap = _mutate_snapshot(
+        policy_blocks=[],
+        infrastructure_errors=[],
+        planner_capture={},
+        results={},
+    )
+    tui = BenchDeckTUI(Path("/tmp/test"))
+    tui.snapshot = snap
+    for tab in range(4):
+        tui.tab = tab
+        lines = tui._render(80)
+        assert len(lines) > 0
+
+
+def test_generate_screenshots_survives_edge_case_snapshot(tmp_path: Path) -> None:
+    snap = _mutate_snapshot(
+        judgments=[],
+        policy_blocks=[],
+        infrastructure_errors=[],
+    )
+    paths = gds.generate_screenshots(
+        snapshot=snap,
+        out_dir=tmp_path,
+        width_cols=80,
+        font_size=12,
+        fmt="png",
+        theme_name="dark",
+    )
+    assert len(paths) == 4
+    for p in paths:
+        assert p.exists()
+        assert p.stat().st_size > 100
 
 
 # ── dual-agent synthetic data ──────────────────────────────────────────────

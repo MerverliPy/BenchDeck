@@ -43,6 +43,12 @@ jobs:
       - run: mypy src/benchdeck/
       - run: pytest --cov=src/benchdeck --cov-report=term-missing
 
+  # Visual regression: compares CI-generated screenshots against golden images.
+  # Both expected and actual images are produced from the same synthetic
+  # _build_demo_snapshot() data, so this detects rendering code drift
+  # (font layout, colourization, tab structure) — not behavioral correctness.
+  # Rendering resilience with varied data shapes is validated by
+  # test_screenshots.py's edge-case snapshot tests.
   visual-regression:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
