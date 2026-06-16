@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
+import pytest
+
+try:
+    import yaml  # type: ignore[import-untyped]
+
+    _has_yaml = True
+except ImportError:
+    _has_yaml = False
 
 ROOT = Path(__file__).resolve().parents[1]
+
+_yaml_reason = "pyyaml not installed"
 
 
 class TestIssueTemplates:
@@ -21,11 +30,13 @@ class TestIssueTemplates:
     def test_config_exists(self) -> None:
         assert (self.TEMPLATE_DIR / "config.yml").is_file()
 
+    @pytest.mark.skipif(not _has_yaml, reason=_yaml_reason)
     def test_config_disables_blank_issues_false(self) -> None:
         path = self.TEMPLATE_DIR / "config.yml"
         content = yaml.safe_load(path.read_text())
         assert isinstance(content, dict)
 
+    @pytest.mark.skipif(not _has_yaml, reason=_yaml_reason)
     def test_bug_report_is_valid_yaml(self) -> None:
         path = self.TEMPLATE_DIR / "bug_report.yml"
         content = yaml.safe_load(path.read_text())
@@ -72,6 +83,7 @@ class TestDependabot:
         path = ROOT / ".github" / "dependabot.yml"
         assert path.is_file()
 
+    @pytest.mark.skipif(not _has_yaml, reason=_yaml_reason)
     def test_dependabot_is_valid_yaml(self) -> None:
         path = ROOT / ".github" / "dependabot.yml"
         content = yaml.safe_load(path.read_text())
@@ -79,12 +91,14 @@ class TestDependabot:
         assert "version" in content
         assert "updates" in content
 
+    @pytest.mark.skipif(not _has_yaml, reason=_yaml_reason)
     def test_dependabot_has_pip_ecosystem(self) -> None:
         path = ROOT / ".github" / "dependabot.yml"
         content = yaml.safe_load(path.read_text())
         ecosystems = [u.get("package-ecosystem") for u in content.get("updates", [])]
         assert "pip" in ecosystems
 
+    @pytest.mark.skipif(not _has_yaml, reason=_yaml_reason)
     def test_dependabot_has_github_actions_ecosystem(self) -> None:
         path = ROOT / ".github" / "dependabot.yml"
         content = yaml.safe_load(path.read_text())
