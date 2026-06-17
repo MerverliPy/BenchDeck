@@ -1,7 +1,8 @@
 # Workflow Action SHA Pinning Checklist
 
 All external `uses:` references in `.github/workflows/*.yml` must be pinned to a reviewed
-full 40-character commit SHA. **Verified 2026-06-16.**
+full 40-character commit SHA. **Verified 2026-06-16.** Updated 2026-06-16 for Node.js 24
+compatibility (newer major versions).
 
 ## Verification instructions
 
@@ -10,7 +11,7 @@ For each action below, run:
 ```bash
 OWNER="<owner>"
 REPO="<repo>"
-TAG="v4"  # the mutable tag
+TAG="v5"
 curl -sL "https://api.github.com/repos/${OWNER}/${REPO}/git/ref/tags/${TAG}" | jq -r '.object.sha'
 ```
 
@@ -19,17 +20,17 @@ If the tag contains a slash (e.g. `release/v1`), check if it's a branch instead:
 curl -sL "https://api.github.com/repos/${OWNER}/${REPO}/git/refs/heads/${TAG}" | jq -r '.object.sha'
 ```
 
-## Verified actions
+## Verified actions (Node.js 24 compatible — 2026-06-16)
 
-| # | Action | Repository | Tag | SHA | Verified? |
-|---|--------|-----------|-----|-----|-----------|
-| 1 | `actions/checkout` | `actions/checkout` | `v4` | `34e114876b0b11c390a56381ad16ebd13914f8d5` | ✅ 2026-06-16 |
-| 2 | `actions/setup-python` | `actions/setup-python` | `v5` | `a26af69be951a213d495a4c3e4e4022e16d87065` | ✅ 2026-06-16 |
-| 3 | `actions/upload-artifact` | `actions/upload-artifact` | `v4` | `ea165f8d65b6e75b540449e92b4886f43607fa02` | ✅ 2026-06-16 |
-| 4 | `actions/download-artifact` | `actions/download-artifact` | `v4` | `d3f86a106a0bac45b974a628896c90dbdf5c8093` | ✅ 2026-06-16 |
+| # | Action | Repository | Tag | SHA | Verified |
+|---|--------|-----------|-----|-----|----------|
+| 1 | `actions/checkout` | `actions/checkout` | `v5` | `93cb6efe18208431cddfb8368fd83d5badbf9bfd` | ✅ 2026-06-16 |
+| 2 | `actions/setup-python` | `actions/setup-python` | `v6` | `a309ff8b426b58ec0e2a45f0f869d46889d02405` | ✅ 2026-06-16 |
+| 3 | `actions/upload-artifact` | `actions/upload-artifact` | `v5` | `330a01c490aca151604b8cf639adc76d48f6c5d4` | ✅ 2026-06-16 |
+| 4 | `actions/download-artifact` | `actions/download-artifact` | `v5` | `634f93cb2916e3fdff6788551b99b062d0335ce0` | ✅ 2026-06-16 |
 | 5 | `pypa/gh-action-pypi-publish` | `pypa/gh-action-pypi-publish` | `release/v1` (branch) | `cef221092ed1bacb1cc03d23a2d87d1d172e277b` | ✅ 2026-06-16 |
 | 6 | `anchore/sbom-action` | `anchore/sbom-action` | `v0` | `e22c389904149dbc22b58101806040fa8d37a610` | ✅ 2026-06-16 |
-| 7 | `softprops/action-gh-release` | `softprops/action-gh-release` | `v2` | `3bb12739c298aeb8a4eeaf626c5b8d85266b0e65` | ✅ 2026-06-16 |
+| 7 | `softprops/action-gh-release` | `softprops/action-gh-release` | `v3` | `b4309332981a82ec1c5618f44dd2e27cc8bfbfda` | ✅ 2026-06-16 |
 
 ## Note on pypa/gh-action-pypi-publish
 
@@ -37,9 +38,16 @@ The `release/v1` reference is a **branch**, not a tag. The SHA pinned above
 (`cef2210`) is the current head of that branch as of 2026-06-16. When the
 branch moves forward, the SHA should be re-verified and updated.
 
-## Verification date
+## Node.js 24 upgrade (2026-06-16)
 
-2026-06-16 — all SHAs verified via `api.github.com`.
+All actions upgraded to versions that natively support Node.js 24:
+- `checkout`: v4 → v5
+- `setup-python`: v5 → v6
+- `upload-artifact`: v4 → v5
+- `download-artifact`: v4 → v5
+- `action-gh-release`: v2 → v3
+- `sbom-action`: v0 (no newer tag available; v0 still uses Node.js 20 — acceptable since it's release-only, not CI-blocking)
+- `pypa-publish`: release/v1 (branch head, already current)
 
 ## Dependabot management
 
@@ -56,3 +64,7 @@ To merge a Dependabot action bump:
 5. The SHA pinning test will now pass — merge the PR.
 
 For pip dependency bumps, standard review applies (CI must pass).
+
+## Verification date
+
+2026-06-16 — all SHAs verified via `api.github.com` (Node.js 24 upgrade).
