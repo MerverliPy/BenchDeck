@@ -450,4 +450,48 @@ git check-ignore -v .envrc   # should confirm gitignored
 
 ---
 
+## Implementation Handoff: `--capture-level` dead code
+
+**Filed by:** repository-docs agent (2026-06-17)  
+**Branch:** `main` — commit `644538f` (plus uncommitted doc fixes)
+
+### Observed behavior
+
+The `--capture-level` CLI flag is parsed but has no effect. The value is accepted and stored in `args` but never forwarded to `BenchmarkRunner`.
+
+### Evidence
+
+1. **`src/benchdeck/cli.py` line 103** — `--capture-level` is defined on the `run` subparser with `choices=["minimal", "standard", "full"]` and `default="full"`.
+2. **`src/benchdeck/cli.py` lines 215–231** — `BenchmarkRunner(...)` is constructed without passing a `capture_level` argument.
+3. **`src/benchdeck/runner.py` lines 89–110** — `BenchmarkRunner.__init__` does not accept a `capture_level` parameter.
+4. **Config parser** lists `"capture_level"` as a known key, but the value is never consumed or referenced in the runner.
+
+### Expected behavior (by intent)
+
+The flag should control the detail level of response capture during benchmark execution — likely affecting what gets stored in `CaseResult.response` or similar artifact fields. The three levels (`minimal`, `standard`, `full`) suggest increasing verbosity in recorded responses.
+
+### Relevant paths
+
+| File | Role |
+|------|------|
+| `src/benchdeck/cli.py` | Flag definition (l.103), runner construction (l.215–231) |
+| `src/benchdeck/runner.py` | `BenchmarkRunner.__init__` (l.89–110), case execution loop |
+| `src/benchdeck/config.py` | Known config keys list |
+| `src/benchdeck/schemas/` | Artifact schemas that capture_level may affect |
+| `tests/` | Should include tests for each capture level |
+
+### Documentation impact
+
+Currently, `README.md` lists `--capture-level` as if it works. The documentation agent has left it in place pending this fix. Once wired, the README is already accurate.
+
+### Acceptance criteria
+
+1. `benchdeck run --capture-level minimal` stores less response detail than `--capture-level full`.
+2. `benchdeck run --capture-level standard` stores intermediate detail.
+3. Default behavior (`--capture-level full`) matches current behavior (backward compatible).
+4. Tests verify each capture level produces correct output.
+5. No regressions in existing tests.
+
+---
+
 *Audit resumed 2026-06-15. Commit `9c36db9`. 1 P0 (credential exposure — intentional/scoped), 1 P1 resolved (mypy tests/ regression), 1 P2 resolved (stale mypy claim), 1 P2 resolved (stale phases), 2 P3 observations (ongoing). Prior audit findings revalidated. Working tree clean. Phase 2 (documentation) is the next priority.*
