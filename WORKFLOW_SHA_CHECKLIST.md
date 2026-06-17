@@ -40,3 +40,19 @@ branch moves forward, the SHA should be re-verified and updated.
 ## Verification date
 
 2026-06-16 — all SHAs verified via `api.github.com`.
+
+## Dependabot management
+
+Dependabot opens weekly PRs for pip and GitHub Actions updates. For
+action version bumps, the SHA pinning test (`test_workflow_policy.py`)
+will fail because Dependabot replaces the pinned SHA with a mutable tag.
+To merge a Dependabot action bump:
+
+1. Look at the new tag/version in the PR diff.
+2. Verify the corresponding SHA via the GitHub API:
+   `curl -sL https://api.github.com/repos/{owner}/{repo}/git/ref/tags/{tag} | jq -r '.object.sha'`
+3. Update the workflow file with the verified SHA.
+4. Update the verified actions table above.
+5. The SHA pinning test will now pass — merge the PR.
+
+For pip dependency bumps, standard review applies (CI must pass).
