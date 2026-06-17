@@ -145,6 +145,27 @@ jobs:
           print(f\"PASS: inspector correctly reported: {coverage_warns[0]}\")
           "'
 
+      - name: Validate live secret transport without an API request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .product-test/scripts/live_benchdeck_run.py \
+            --canary \
+            --agent-a examples/repository-integrity-agent.md \
+            --model canary-no-request \
+            --planner-model canary-no-request \
+            --judge-model canary-no-request \
+            --judges 1 \
+            --timeout 30 \
+            --max-retries 1 \
+            --max-logical-requests 1 \
+            --max-http-attempts 1 \
+            --max-total-input-tokens 1000 \
+            --max-total-output-tokens 1000 \
+            --max-output-tokens-planner 100 \
+            --max-output-tokens-agent 100 \
+            --max-output-tokens-judge 100
+
       - name: Run real PTY smoke validation
         shell: bash
         run: |
@@ -196,6 +217,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${PRODUCT_TEST_ARCHIVE_DIR}"
+          state_json="$(python3 .product-test/scripts/sandbox_manager.py status 2>/dev/null || true)"
+          if test -n "${state_json}"; then
+            run_id="$(STATE_JSON="${state_json}" python3 -c 'import json, os; print(json.loads(os.environ["STATE_JSON"])["run_id"])')"
+            evidence_dir=".test-evidence/${run_id}"
+            if test -d "${evidence_dir}"; then
+              python3 .product-test/scripts/evidence.py finalize \
+                --evidence-dir "${evidence_dir}" \
+                --expected-run-id "${run_id}"
+              python3 .product-test/scripts/evidence.py verify \
+                --evidence-dir "${evidence_dir}" \
+                --expected-run-id "${run_id}"
+            fi
+          fi
           if test -d .test-evidence; then
             archive="${PRODUCT_TEST_ARCHIVE_DIR}/${GITHUB_REPOSITORY//\//-}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
             tar -czf "${archive}" .test-evidence

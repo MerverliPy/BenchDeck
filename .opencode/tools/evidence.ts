@@ -1,64 +1,77 @@
 import { tool } from "@opencode-ai/plugin"
 import path from "path"
+import { runProductTestPython } from "../lib/product_test_runtime"
 
-function assertProductTestAgent(context: { agent?: string }): void {
-  const agent = context.agent ?? ""
-  if (agent !== "benchdeck-product-tester" && !agent.startsWith("benchdeck-test-")) {
-    throw new Error(`tool is restricted to BenchDeck product-test agents; caller=${agent || "unknown"}`)
+async function activeEvidence(context: { worktree: string; agent?: string }) {
+  const stateText = await runProductTestPython(context, "sandbox_manager.py", ["status"])
+  const state = JSON.parse(stateText)
+  if (typeof state.run_id !== "string" || state.run_id.length === 0) {
+    throw new Error("active sandbox state does not contain a valid run_id")
+  }
+  return {
+    runId: state.run_id as string,
+    evidenceDir: path.join(context.worktree, ".test-evidence", state.run_id as string),
   }
 }
-
-async function runPython(
-  context: { worktree: string; agent?: string },
-  scriptName: string,
-  args: string[],
-): Promise<string> {
-  assertProductTestAgent(context)
-  const script = path.join(context.worktree, ".product-test", "scripts", scriptName)
-  const proc = Bun.spawn(["python3", script, ...args], {
-    cwd: context.worktree,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  if (code !== 0) {
-    throw new Error((stderr || stdout || `tool exited ${code}`).trim())
-  }
-  return stdout.trim()
-}
-
 
 export const record = tool({
-  description: "Append one structured product-test result to the active evidence package",
+  description: "Validate and append one structured product-test result to the active evidence package",
   args: {
     record: tool.schema.record(tool.schema.string(), tool.schema.any()),
   },
   async execute(args, context) {
-    const stateText = await runPython(context, "sandbox_manager.py", ["status"])
-    const state = JSON.parse(stateText)
-    const evidenceDir = path.join(context.worktree, ".test-evidence", state.run_id)
-    return runPython(context, "evidence.py", [
-      "--evidence-dir", evidenceDir,
+    const active = await activeEvidence(context)
+    return runProductTestPython(context, "evidence.py", [
+      "record",
+      "--evidence-dir", active.evidenceDir,
+      "--expected-run-id", active.runId,
       "--record-json", JSON.stringify(args.record),
     ])
   },
 })
 
 export const write_report = tool({
-  description: "Write the final evidence-backed Markdown report to the active product-test evidence directory",
+  description: "Atomically write the final evidence-backed Markdown report to the active evidence directory",
   args: {
     content: tool.schema.string().min(1),
   },
   async execute(args, context) {
-    const stateText = await runPython(context, "sandbox_manager.py", ["status"])
-    const state = JSON.parse(stateText)
-    const reportPath = path.join(context.worktree, ".test-evidence", state.run_id, "FINAL_PRODUCT_TEST_REPORT.md")
-    await Bun.write(reportPath, args.content)
-    return JSON.stringify({ ok: true, path: reportPath })
+    const active = await activeEvidence(context)
+    return runProductTestPython(
+      context,
+      "evidence.py",
+      [
+        "write-report",
+        "--evidence-dir", active.evidenceDir,
+        "--expected-run-id", active.runId,
+      ],
+      { stdinText: args.content },
+    )
+  },
+})
+
+export const finalize = tool({
+  description: "Create the final SHA-256 manifest for the active evidence package after all report and patch files exist",
+  args: {},
+  async execute(_args, context) {
+    const active = await activeEvidence(context)
+    return runProductTestPython(context, "evidence.py", [
+      "finalize",
+      "--evidence-dir", active.evidenceDir,
+      "--expected-run-id", active.runId,
+    ])
+  },
+})
+
+export const verify = tool({
+  description: "Verify the active evidence package against its final SHA-256 manifest",
+  args: {},
+  async execute(_args, context) {
+    const active = await activeEvidence(context)
+    return runProductTestPython(context, "evidence.py", [
+      "verify",
+      "--evidence-dir", active.evidenceDir,
+      "--expected-run-id", active.runId,
+    ])
   },
 })

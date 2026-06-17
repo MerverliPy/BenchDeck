@@ -1,37 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
-import path from "path"
-
-function assertProductTestAgent(context: { agent?: string }): void {
-  const agent = context.agent ?? ""
-  if (agent !== "benchdeck-product-tester" && !agent.startsWith("benchdeck-test-")) {
-    throw new Error(`tool is restricted to BenchDeck product-test agents; caller=${agent || "unknown"}`)
-  }
-}
-
-async function runPython(
-  context: { worktree: string; agent?: string },
-  scriptName: string,
-  args: string[],
-): Promise<string> {
-  assertProductTestAgent(context)
-  const script = path.join(context.worktree, ".product-test", "scripts", scriptName)
-  const proc = Bun.spawn(["python3", script, ...args], {
-    cwd: context.worktree,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  if (code !== 0) {
-    throw new Error((stderr || stdout || `tool exited ${code}`).trim())
-  }
-  return stdout.trim()
-}
-
+import { runProductTestPython } from "../lib/product_test_runtime"
 
 export const create = tool({
   description: "Create an isolated rootless-Docker BenchDeck test sandbox and optionally install development dependencies through the package allowlist",
@@ -46,7 +14,7 @@ export const create = tool({
     if (args.installDependencies) command.push("--install-dependencies")
     if (args.replace) command.push("--replace")
     if (args.quick) command.push("--quick")
-    return runPython(context, "sandbox_manager.py", command)
+    return runProductTestPython(context, "sandbox_manager.py", command)
   },
 })
 
@@ -54,7 +22,7 @@ export const status = tool({
   description: "Return the active BenchDeck product-test sandbox identity, self-test, and container state",
   args: {},
   async execute(_args, context) {
-    return runPython(context, "sandbox_manager.py", ["status"])
+    return runProductTestPython(context, "sandbox_manager.py", ["status"])
   },
 })
 
@@ -72,7 +40,7 @@ export const exec = tool({
     ]).default("LOCAL_BLACK_BOX_EVIDENCE"),
   },
   async execute(args, context) {
-    return runPython(context, "sandbox_manager.py", [
+    return runProductTestPython(context, "sandbox_manager.py", [
       "exec",
       "--command", args.command,
       "--cwd", args.cwd,
@@ -105,7 +73,7 @@ export const exec_with_output = tool({
       "--evidence-class", args.evidenceClass,
     ]
     if (args.captureGlob) cmd.push("--capture-glob", args.captureGlob)
-    return runPython(context, "sandbox_manager.py", cmd)
+    return runProductTestPython(context, "sandbox_manager.py", cmd)
   },
 })
 
@@ -113,7 +81,7 @@ export const export_patch = tool({
   description: "Export all candidate sandbox changes as a binary-capable Git patch under the evidence directory",
   args: {},
   async execute(_args, context) {
-    return runPython(context, "sandbox_manager.py", ["patch"])
+    return runProductTestPython(context, "sandbox_manager.py", ["patch"])
   },
 })
 
@@ -125,6 +93,6 @@ export const destroy = tool({
   async execute(args, context) {
     const command = ["destroy"]
     if (args.purgeWorkspace) command.push("--purge")
-    return runPython(context, "sandbox_manager.py", command)
+    return runProductTestPython(context, "sandbox_manager.py", command)
   },
 })

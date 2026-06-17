@@ -18,7 +18,7 @@ metadata:
 - `src/benchdeck/storage.py`: atomic artifact writes.
 - `src/benchdeck/loader.py`: directory and ZIP loading.
 - `src/benchdeck/inspect.py`: output audit.
-- `src/benchdeck/tui.py`: curses state, screens, keys, rendering, export, launch, cancellation.
+- `src/benchdeck/tui/app.py` and `src/benchdeck/tui/helpers.py`: curses state, screens, keys, rendering, export, launch, cancellation.
 - `src/benchdeck/manifest.py`: artifact manifest/integrity.
 - `src/benchdeck/budget.py`: request/token limits.
 - `src/benchdeck/reporting.py`, `scoring.py`, `disagreement.py`: verdict and score outputs.

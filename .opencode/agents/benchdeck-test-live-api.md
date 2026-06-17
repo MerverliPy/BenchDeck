@@ -11,10 +11,18 @@ permission:
     "*.env.*": deny
     "**/.env": deny
     "**/.env.*": deny
+    ".envrc": deny
+    "**/.envrc": deny
     "*.pem": deny
     "**/*.pem": deny
     "*.key": deny
     "**/*.key": deny
+    "*credentials*": deny
+    "**/*credentials*": deny
+    ".git/**": deny
+    "**/.git/**": deny
+    "*.env.example": allow
+    "**/.env.example": allow
   edit: deny
   glob: allow
   grep: allow
@@ -28,9 +36,19 @@ permission:
     "*": deny
     "product-test-evidence": allow
     "no-mock-live-validation": allow
+  repository_state: deny
+  sandbox_create: deny
   sandbox_status: allow
+  sandbox_exec: deny
+  sandbox_exec_with_output: deny
+  sandbox_pty: deny
+  sandbox_export_patch: deny
+  sandbox_destroy: deny
   benchdeck_live_run: ask
   evidence_record: allow
+  evidence_write_report: deny
+  evidence_finalize: deny
+  evidence_verify: deny
 ---
 
 # BenchDeck Live OpenAI Tester
@@ -39,12 +57,14 @@ Use only `benchdeck_live_run`. Never read or request the API key value.
 
 ## Secret transport (Phase 0 containment)
 
-The key is transported from the host to the container via tempfile bind-mount:
-- Host creates a temporary directory (mode 0700) and writes the key to a file (mode 0400).
-- The directory is bind-mounted read-only at `/run/secrets` inside the container.
-- The container receives `OPENAI_API_KEY_FILE=/run/secrets/api_key` (a file path, not a value).
-- The application reads the key from the file and passes it directly to the OpenAI client constructor.
-- The key is **never** passed through Docker `-e`, `--env-file`, or command arguments.
+The key is transported from a private host tempfile into an in-container tmpfs over `docker exec -i` standard input:
+- Host creates a temporary directory with mode 0700 and a key file with mode 0400.
+- The host secret directory is never bind-mounted into the container.
+- The runtime UID reads the key from standard input, writes `/run/secrets/api_key` directly inside the private tmpfs, and sets the file to mode 0400.
+- The transport does not use `docker cp`, Docker environment values, or command-line secret arguments.
+- The container receives `OPENAI_API_KEY_FILE=/run/secrets/api_key` (a path, never the value).
+- The application reads the key file and passes the value directly to the OpenAI client constructor.
+- The key is **never** passed through Docker `-e`, `--env-file`, command arguments, or a world-readable host file.
 - The temporary host directory and file are removed in `finally` and `atexit` handlers on success, failure, cancellation, and timeout.
 
 Secrecy is not proven solely by log redaction. Validate that the key is absent from:

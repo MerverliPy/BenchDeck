@@ -10,11 +10,18 @@ permission:
     "*.env.*": deny
     "**/.env": deny
     "**/.env.*": deny
+    ".envrc": deny
+    "**/.envrc": deny
     "*.pem": deny
     "**/*.pem": deny
     "*.key": deny
     "**/*.key": deny
+    "*credentials*": deny
+    "**/*credentials*": deny
+    ".git/**": deny
     "**/.git/**": deny
+    "*.env.example": allow
+    "**/.env.example": allow
   edit: deny
   glob: allow
   grep: allow
@@ -38,12 +45,15 @@ permission:
   sandbox_create: ask
   sandbox_status: allow
   sandbox_exec: allow
+  sandbox_exec_with_output: allow
   sandbox_pty: allow
   sandbox_export_patch: allow
   sandbox_destroy: allow
   benchdeck_live_run: ask
   evidence_record: allow
   evidence_write_report: allow
+  evidence_finalize: allow
+  evidence_verify: allow
 ---
 
 # BenchDeck Product Test Orchestrator
@@ -182,7 +192,15 @@ Invoke `benchdeck-test-reporter`. Require it to persist `FINAL_PRODUCT_TEST_REPO
 - independent verification;
 - final verdict.
 
-Export the final sandbox patch with `sandbox_export_patch`. Destroy the running containers with `sandbox_destroy` while preserving evidence.
+After the reporter finishes, complete the evidence package in this exact order:
+
+1. Export the final sandbox patch with `sandbox_export_patch`.
+2. Confirm `FINAL_PRODUCT_TEST_REPORT.md` exists through `evidence_write_report`.
+3. Call `evidence_finalize` only after every report, patch, command log, PTY artifact, and live-run artifact is present.
+4. Call `evidence_verify`. A manifest failure makes the verdict `INCONCLUSIVE`; do not report `PASS`.
+5. Destroy the running containers with `sandbox_destroy` while preserving evidence.
+
+Never modify the evidence package after `evidence_finalize`. If a file must change, finalize and verify again before reporting completion.
 
 ## Quality gate
 

@@ -23,7 +23,7 @@
 | **Stack** | Python 3.12.3 (runtime), Pydantic v2, OpenAI SDK v2 (`responses` API), curses TUI |
 | **Tests** | 408 passed, 2 skipped (410 total) |
 | **Coverage** | 84% (2,550 stmts, 400 missed) |
-| **Overall Health** | **Good.** Ruff clean, ruff format clean, mypy clean on `src/` and `tests/` (strict). One plaintext credential on disk (P0 — intentional/scoped via direnv). Prior mypy regression resolved. |
+| **Overall Health** | **Security remediation required.** A plaintext OpenAI credential was reported in `.envrc`; gitignore and direnv do not protect a credential from local disclosure. Rotate/revoke it and replace repository-local plaintext storage before live testing. |
 
 ### Git Log (recent since prior audit at `b46c4ed`)
 
@@ -107,7 +107,7 @@ dist/                          # Build artifacts (gitignored, not tracked — st
 
 | ID | Severity | Description | Confidence | Status |
 |----|----------|-------------|------------|--------|
-| P0-PLAINTEXT-KEY | **P0** | Real OpenAI API key exposed in `.envrc` | High | Ongoing (intentional/scoped) |
+| P0-PLAINTEXT-KEY | **P0** | Plaintext OpenAI API key reported in `.envrc` | High | **Open — rotate/revoke and remove** |
 | P1-MYPY-TESTS | **P1** | `mypy tests/` fails with 5 errors — contradicts REMAINING_ISSUES.md and prior audit claim | High | **Resolved** |
 | P2-STALE-MYPY-CLAIM | P2 | `REMAINING_ISSUES.md` line 49 claims mypy clean on tests/ but it is not | High | **Resolved** |
 | P2-STALE-PHASES | P2 | `OPENCODE_IMPLEMENTATION_PHASES.md` stale "not yet implemented" claims | High | **Resolved** in `9c36db9` |
@@ -118,13 +118,13 @@ dist/                          # Build artifacts (gitignored, not tracked — st
 
 ### P0-PLAINTEXT-KEY: Live API key on disk in `.envrc`
 
-- **Status:** Intentional/scoped via direnv. Not a leak — a deliberate project-local configuration pattern.
+- **Status:** **Open security incident.** Repository-local plaintext storage is not an acceptable control, even when the file is gitignored and loaded through direnv.
 - **Affected File:** `/home/calvin/BenchDeck/.envrc`
-- **Evidence:** File contains `export OPENAI_API_KEY=sk-proj-rTrsny...` (real key, 164 chars). Present on-disk. Confirmed gitignored by `.gitignore:13`. Confirmed not tracked by `git ls-files`. Confirmed not in git history.
-- **Context:** Scoped via `direnv`. Gitignore line `.envrc` was committed in `b46c4ed`. CI workflow (`ci.yml:23-38`) includes a credential pattern scanner. Product test evidence (SEC-002) confirms benchdeck does not leak API keys to artifacts or logs.
+- **Evidence:** A prior local audit confirmed a real `OPENAI_API_KEY` assignment in `.envrc`. The key value and prefix are intentionally omitted here. The file was reported as gitignored and untracked; that reduces commit risk but does not protect the credential on the workstation.
+- **Context:** `direnv`, gitignore, and CI scanners do not prevent malware, backups, shell tooling, local agents, or accidental output from reading a plaintext credential.
 - **Impact (if leaked):** Key compromise could result in unauthorized API usage, cost, and data exposure.
-- **Recommendation:** (1) Rotate the key periodically. (2) Consider moving to `~/.config/benchdeck/.env` outside the repo. (3) Current pattern (direnv + gitignore + CI scan) provides reasonable protection.
-- **Acceptance Criteria:** `.envrc` absent from commits; key functional for local development; gitignore protection active.
+- **Recommendation:** (1) Revoke/rotate the reported key immediately. (2) Remove the plaintext assignment from `.envrc`. (3) Use an owner-only secret file outside the repository or a platform secret manager. (4) Re-run credential scans before any live API validation.
+- **Acceptance Criteria:** The reported key is revoked; `.envrc` contains no API-key value; replacement credentials are stored outside the repository with mode `0600` or stricter; repository and evidence scans find no credential value.
 
 ---
 
@@ -185,7 +185,7 @@ All prior findings from the 2026-06-12 audit (at `b46c4ed`) were independently r
 
 | ID | Severity | Original Finding | Current Status |
 |----|----------|-----------------|----------------|
-| P0-PLAINTEXT-KEY | P0 | API key in `.envrc` | **Ongoing** — intentional/scoped. `.envrc` gitignored (committed). CI credential scan active. Key unchanged. |
+| P0-PLAINTEXT-KEY | P0 | API key reported in `.envrc` | **Open** — rotate/revoke and remove plaintext storage before live testing. |
 | P1-MYPY-TESTS | P1 | `mypy tests/` regression (5 errors) | **Resolved** — type annotations and `# type: ignore` added. mypy clean on `src/` and `tests/`. |
 | P2-STALE-MYPY-CLAIM | P2 | `REMAINING_ISSUES.md` stale mypy claim | **Resolved** — claim now accurate after P1 fix; regression noted in file. |
 | P2-STALE-PHASES | P2 | `OPENCODE_IMPLEMENTATION_PHASES.md` stale claims | **Resolved** — fixed in `9c36db9`. Lines 45-47 now correct. |
@@ -270,7 +270,7 @@ The CI credential scan (`ci.yml:23-38`) does not exclude `.test-evidence/`. The 
 
 ## Decisions and Assumptions
 
-1. **The `.envrc` credential is intentional and scoped.** Verified by: committed gitignore, committed CI credential scan, direnv pattern. Treated as a documented P0 with acceptance criteria.
+1. **The `.envrc` credential requires immediate remediation.** Gitignore, CI scanning, and direnv scoping do not make repository-local plaintext credential storage safe.
 2. **`mypy tests/` failure was a regression from prior audit — now resolved.** Prior audit at `b46c4ed` claimed mypy clean on tests/. New test code in `test_tui_render.py` (TUI Phase 2) and `test_loader.py` (loader strict mode) introduced 5 errors. Fixed by adding type annotations and `# type: ignore[attr-defined]` comments. CI only checks `src/`, so this went unnoticed until re-audit.
 3. **Working tree cleanliness confirmed.** Clean at `9c36db9`.
 4. **`.test-evidence/` contains synthetic sentinel, not real key.** `sk-proj-test-…abcdef` is a test fixture. Gitignored, not tracked.
@@ -392,7 +392,7 @@ ruff check .  # no source changes expected
 
 | ID | Finding | Decision | Reasoning |
 |----|---------|----------|-----------|
-| P0-PLAINTEXT-KEY | `.envrc` credential | **Intentionally retained** | Scoped via direnv. Gitignored. CI credential scan active. Periodic rotation recommended. |
+| P0-PLAINTEXT-KEY | `.envrc` credential | **Remove immediately** | Revoke/rotate the reported key, remove the plaintext assignment, and use owner-only external secret storage. |
 | COV-GW | `openai_gateway.py` live HTTP path coverage | Deferred | Requires live OpenAI API key; `FakeGateway` covers data contracts. |
 | Live API | All live API integration testing | Deferred | Same as above. Key must be rotated before testing against it. |
 | Windows | Windows compatibility testing | Deferred | Project declares Linux-only support. |
@@ -494,4 +494,4 @@ Currently, `README.md` lists `--capture-level` as if it works. The documentation
 
 ---
 
-*Audit resumed 2026-06-15. Commit `9c36db9`. 1 P0 (credential exposure — intentional/scoped), 1 P1 resolved (mypy tests/ regression), 1 P2 resolved (stale mypy claim), 1 P2 resolved (stale phases), 2 P3 observations (ongoing). Prior audit findings revalidated. Working tree clean. Phase 2 (documentation) is the next priority.*
+*Audit resumed 2026-06-15 at commit `9c36db9`. The credential finding remains P0 and requires rotation/removal; describing repository-local plaintext storage as intentional/scoped does not reduce the risk. Other historical findings retain their recorded status.*

@@ -32,7 +32,8 @@ permission:
     "**/*.pem": deny
     "*.key": deny
     "**/*.key": deny
-    "src/benchdeck/tui.py": allow
+    "src/benchdeck/tui/app.py": allow
+    "src/benchdeck/tui/helpers.py": allow
     "tests/test_tui_loading.py": allow
     "tests/test_tui_render.py": allow
     "tests/test_screenshots.py": allow
@@ -152,7 +153,7 @@ Inspect, design, implement, and validate the smallest coherent change to BenchDe
 
 Primary automatic edit ownership is limited to:
 
-- `src/benchdeck/tui.py`
+- `src/benchdeck/tui/app.py` and `src/benchdeck/tui/helpers.py`
 - `tests/test_tui_loading.py`
 - `tests/test_tui_render.py`
 - `tests/test_screenshots.py`
@@ -169,7 +170,7 @@ When repository claims disagree, prefer current source and schemas, then tests, 
 
 Confirm these facts during discovery rather than assuming they remain true:
 
-- the TUI is implemented in `src/benchdeck/tui.py` and renders screen content as `list[str]`;
+- the TUI is implemented in `src/benchdeck/tui/app.py` and `src/benchdeck/tui/helpers.py` and renders screen content as `list[str]`;
 - loading and rendering behavior is covered by `tests/test_tui_loading.py` and `tests/test_tui_render.py`;
 - screenshot behavior is implemented by `scripts/generate_demo_screens.py` and covered by `tests/test_screenshots.py`;
 - the supported hard minimum is `32x10`, with `80x24` as the standard comparison size;

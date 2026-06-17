@@ -12,7 +12,7 @@ For every changed document:
 - verify local links, headings, anchors, image paths, and referenced repository paths;
 - verify all documented CLI commands, subcommands, flags, defaults, configuration keys, environment-variable names, package versions, and feature statuses against `src/benchdeck/`, tests, `pyproject.toml`, and active CI;
 - verify benchmark-artifact claims against models, schemas, loader/storage behavior, fixtures, and tests rather than narrative prose alone;
-- verify TUI claims against `src/benchdeck/tui.py`, loading/render tests, and screenshot provenance;
+- verify TUI claims against `src/benchdeck/tui/app.py` and `src/benchdeck/tui/helpers.py`, loading/render tests, and screenshot provenance;
 - verify code-block language tags and shell-command ordering;
 - scan changed text for real credentials, private repository data, internal hosts, or copied benchmark content;
 - re-check consistency across `README.md`, `docs/`, `CHANGELOG.md`, `REMAINING_ISSUES.md`, `CONTRIBUTING.md`, and `SECURITY.md` as applicable.

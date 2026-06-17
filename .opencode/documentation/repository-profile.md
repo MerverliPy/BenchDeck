@@ -19,7 +19,7 @@
 - CLI reference: `src/benchdeck/cli.py`, verified against `tests/test_cli.py`; README CLI examples are secondary evidence.
 - Benchmark/artifact contract: `docs/benchmark-contract.md`, model/schema definitions under `src/benchdeck/`, and related tests.
 - Architecture source: `docs/architecture.md`, then current implementation under `src/benchdeck/`.
-- Mobile TUI source: `docs/mobile-tui.md`, `src/benchdeck/tui.py`, renderer/loading tests, and screenshot tests.
+- Mobile TUI source: `docs/mobile-tui.md`, `src/benchdeck/tui/app.py` and `src/benchdeck/tui/helpers.py`, renderer/loading tests, and screenshot tests.
 - Configuration source: `src/benchdeck/config.py`, CLI definitions in `src/benchdeck/cli.py`, and `tests/test_config.py`.
 - Package metadata/version source: `pyproject.toml`
 - Changelog/release source: `CHANGELOG.md`, `pyproject.toml`, and `.github/workflows/release.yml` / `.github/workflows/publish.yml`.

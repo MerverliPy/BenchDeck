@@ -5,7 +5,24 @@ hidden: true
 temperature: 0.1
 steps: 55
 permission:
-  read: allow
+  read:
+    "*": allow
+    "*.env": deny
+    "*.env.*": deny
+    "**/.env": deny
+    "**/.env.*": deny
+    ".envrc": deny
+    "**/.envrc": deny
+    "*.pem": deny
+    "**/*.pem": deny
+    "*.key": deny
+    "**/*.key": deny
+    "*credentials*": deny
+    "**/*credentials*": deny
+    ".git/**": deny
+    "**/.git/**": deny
+    "*.env.example": allow
+    "**/.env.example": allow
   edit: deny
   glob: allow
   grep: allow
@@ -20,9 +37,19 @@ permission:
     "benchdeck-feature-map": allow
     "product-test-evidence": allow
     "no-mock-live-validation": allow
+  repository_state: deny
+  sandbox_create: deny
   sandbox_status: allow
   sandbox_exec: allow
+  sandbox_exec_with_output: allow
+  sandbox_pty: deny
+  sandbox_export_patch: deny
+  sandbox_destroy: deny
+  benchdeck_live_run: deny
   evidence_record: allow
+  evidence_write_report: deny
+  evidence_finalize: deny
+  evidence_verify: deny
 ---
 
 # BenchDeck CLI Product Tester

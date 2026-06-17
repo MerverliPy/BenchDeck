@@ -1,7 +1,7 @@
 {
   "version": 2,
   "repository": "MerverliPy/BenchDeck",
-  "baseline_commit": "e3405fbd072f6213787d616b0c2636b11a2a4095",
+  "baseline_commit": "a5bb9623dc91e7ba55d322b587d7947f88a4b9b4",
   "sandbox": {
     "rootless_docker_required": true,
     "non_root_container_required": true,
@@ -33,7 +33,7 @@
     "live_key_file_env": "BENCHDECK_TEST_OPENAI_KEY_FILE",
     "live_path_disabled_by_default": true,
     "live_enable_env": "BENCHDECK_LIVE_ENABLED",
-    "secret_transport": "tempfile_bind_mount",
+    "secret_transport": "private_tempfile_streamed_over_docker_exec_stdin_to_container_tmpfs",
     "secret_mount_path": "/run/secrets/api_key",
     "container_key_env_deprecated": "OPENAI_API_KEY",
     "container_key_file_env": "OPENAI_API_KEY_FILE",
@@ -52,7 +52,20 @@
     "*.pem",
     "*.key",
     "*credentials*",
-    "**/.git/**"
+    "**/.git/**",
+    "**/.envrc",
+    ".npmrc",
+    "**/.npmrc",
+    ".pypirc",
+    "**/.pypirc",
+    ".netrc",
+    "**/.netrc",
+    "id_rsa",
+    "**/id_rsa",
+    "id_ed25519",
+    "**/id_ed25519",
+    "*secret*",
+    "*token*"
   ],
   "network_allowlists": {
     "package": [

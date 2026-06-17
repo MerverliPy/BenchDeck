@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -12,13 +14,14 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import uuid
 from pathlib import Path
 from typing import Any
 
-SENSITIVE_PARTS = {".git", ".env", ".envrc"}
+SENSITIVE_PARTS = {".git", ".env", ".envrc", ".npmrc", ".pypirc", ".netrc", "id_rsa", "id_ed25519"}
 SENSITIVE_SUFFIXES = {".pem", ".key"}
 SECRET_RE = re.compile(r"sk-[A-Za-z0-9_-]{10,}")
 
@@ -87,12 +90,30 @@ def load_state(root: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _private_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.chmod(0o700)
+
+
+def _atomic_private_write(path: Path, content: str) -> None:
+    _private_directory(path.parent)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def save_state(root: Path, state: dict[str, Any]) -> None:
     path = state_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    _atomic_private_write(path, json.dumps(state, indent=2) + "\n")
 
 
 def docker_rootless() -> bool:
@@ -118,7 +139,13 @@ def is_sensitive(rel: Path) -> bool:
     if any(part.endswith(tuple(SENSITIVE_SUFFIXES)) for part in lowered):
         return True
     joined = "/".join(lowered)
-    return "credential" in joined or joined.endswith(".env") or "/.env." in joined
+    return (
+        "credential" in joined
+        or "secret" in joined
+        or "token" in joined
+        or joined.endswith(".env")
+        or "/.env." in joined
+    )
 
 
 def nul_paths(root: Path, argv: list[str]) -> list[Path]:
@@ -353,19 +380,31 @@ def write_command_evidence(
     stderr: str,
 ) -> dict[str, str]:
     directory = evidence_root(root) / run_id / "commands"
-    directory.mkdir(parents=True, exist_ok=True)
+    _private_directory(directory)
     stdout_path = directory / f"{command_id}.stdout.txt"
     stderr_path = directory / f"{command_id}.stderr.txt"
-    stdout_path.write_text(redact(stdout), encoding="utf-8")
-    stderr_path.write_text(redact(stderr), encoding="utf-8")
+    safe_stdout = redact(stdout)
+    safe_stderr = redact(stderr)
+    _atomic_private_write(stdout_path, safe_stdout)
+    _atomic_private_write(stderr_path, safe_stderr)
     record["stdout_path"] = str(stdout_path.relative_to(root))
     record["stderr_path"] = str(stderr_path.relative_to(root))
-    record["stdout_sha256"] = hashlib.sha256(redact(stdout).encode()).hexdigest()
-    record["stderr_sha256"] = hashlib.sha256(redact(stderr).encode()).hexdigest()
+    record["stdout_sha256"] = hashlib.sha256(safe_stdout.encode()).hexdigest()
+    record["stderr_sha256"] = hashlib.sha256(safe_stderr.encode()).hexdigest()
     log = evidence_root(root) / run_id / "commands.jsonl"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
+    _private_directory(log.parent)
+    fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(fd)
     return {"stdout": str(stdout_path), "stderr": str(stderr_path), "log": str(log)}
 
 
@@ -545,8 +584,8 @@ def command_create(args: argparse.Namespace) -> dict[str, Any]:
         state["dependency_requirements"] = requirements
         state["pip_freeze_sha256"] = hashlib.sha256(freeze.stdout.encode()).hexdigest()
         environment_dir = evidence_root(root) / run_id / "environment"
-        environment_dir.mkdir(parents=True, exist_ok=True)
-        (environment_dir / "pip-freeze.txt").write_text(redact(freeze.stdout), encoding="utf-8")
+        _private_directory(environment_dir)
+        _atomic_private_write(environment_dir / "pip-freeze.txt", redact(freeze.stdout))
         save_state(root, state)
 
     # Boundary self-test.
@@ -576,8 +615,8 @@ def command_create(args: argparse.Namespace) -> dict[str, Any]:
     state["self_test"] = checks
     save_state(root, state)
     evidence = evidence_root(root) / run_id
-    evidence.mkdir(parents=True, exist_ok=True)
-    (evidence / "sandbox.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    _private_directory(evidence)
+    _atomic_private_write(evidence / "sandbox.json", json.dumps(state, indent=2) + "\n")
     return state
 
 
@@ -635,9 +674,9 @@ def command_patch(args: argparse.Namespace) -> dict[str, Any]:
         check=False,
     )
     patch_dir = evidence_root(root) / state["run_id"] / "patches"
-    patch_dir.mkdir(parents=True, exist_ok=True)
+    _private_directory(patch_dir)
     patch = patch_dir / "benchdeck-product-test.patch"
-    patch.write_text(result.stdout, encoding="utf-8")
+    _atomic_private_write(patch, result.stdout)
     return {
         "run_id": state["run_id"],
         "path": str(patch),
@@ -682,24 +721,51 @@ def command_exec_output(args: argparse.Namespace) -> dict[str, Any]:
 
     files: dict[str, str] = {}
     if args.capture_glob:
+        if any(ch in args.capture_glob for ch in "\r\n\x00"):
+            raise ProductTestError("capture glob contains an invalid control character")
         glob_cmd = [
             "docker", "exec", state["container"],
             "bash", "-lc",
-            f"export PATH=/state/venv/bin:$PATH; "
-            f"find /workspace -type f -path '*/{args.capture_glob}' 2>/dev/null || true",
+            'find /workspace -type f -path "$1" -print0 2>/dev/null || true',
+            "benchdeck-capture",
+            f"*/{args.capture_glob}",
         ]
         paths_result = run(glob_cmd, timeout=30, check=False)
         if paths_result.returncode == 0:
-            for rel_path in paths_result.stdout.strip().splitlines():
-                if not rel_path:
+            capture_script = (
+                "import json, pathlib, sys; "
+                "p=pathlib.Path(sys.argv[1]); "
+                "data=p.read_bytes(); max_bytes=262144; "
+                "binary=(b'\x00' in data[:8192]); "
+                "payload='[OMITTED_BINARY_FILE]' if binary else "
+                "data[:max_bytes].decode('utf-8','replace'); "
+                "print(json.dumps({'content':payload,'bytes':len(data),'truncated':len(data)>max_bytes}))"
+            )
+            matched = [path for path in paths_result.stdout.split("\0") if path]
+            for rel_path in matched[:20]:
+                content = run(
+                    [
+                        "docker", "exec", state["container"],
+                        "python", "-c", capture_script, rel_path,
+                    ],
+                    timeout=30,
+                    check=False,
+                )
+                if content.returncode != 0:
                     continue
                 try:
-                    cat_cmd = ["docker", "exec", state["container"], "cat", rel_path]
-                    content = run(cat_cmd, timeout=30, check=False)
-                    key = rel_path.replace("/workspace/", "", 1)
-                    files[key] = redact(content.stdout)
-                except ProductTestError:
-                    pass
+                    captured = json.loads(content.stdout)
+                except json.JSONDecodeError:
+                    continue
+                key = rel_path.replace("/workspace/", "", 1)
+                text = redact(str(captured.get("content", "")))
+                if captured.get("truncated"):
+                    text += f"\n[TRUNCATED_AT_262144_BYTES; ORIGINAL_BYTES={captured.get('bytes')}]"
+                files[key] = text
+            if len(matched) > 20:
+                files["__capture_limit__"] = (
+                    f"[OMITTED_{len(matched) - 20}_ADDITIONAL_FILES; MAX_FILES=20]"
+                )
 
     record = {
         "command_id": command_id,

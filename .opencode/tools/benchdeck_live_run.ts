@@ -1,37 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
-import path from "path"
-
-function assertProductTestAgent(context: { agent?: string }): void {
-  const agent = context.agent ?? ""
-  if (agent !== "benchdeck-product-tester" && !agent.startsWith("benchdeck-test-")) {
-    throw new Error(`tool is restricted to BenchDeck product-test agents; caller=${agent || "unknown"}`)
-  }
-}
-
-async function runPython(
-  context: { worktree: string; agent?: string },
-  scriptName: string,
-  args: string[],
-): Promise<string> {
-  assertProductTestAgent(context)
-  const script = path.join(context.worktree, ".product-test", "scripts", scriptName)
-  const proc = Bun.spawn(["python3", script, ...args], {
-    cwd: context.worktree,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  if (code !== 0) {
-    throw new Error((stderr || stdout || `tool exited ${code}`).trim())
-  }
-  return stdout.trim()
-}
-
+import { runProductTestPython } from "../lib/product_test_runtime"
 
 export default tool({
   description: "Run a real BenchDeck OpenAI benchmark in a dedicated ephemeral container with a mounted test key, api.openai.com-only egress, and strict budgets",
@@ -54,7 +22,7 @@ export default tool({
     maxOutputTokensJudge: tool.schema.number().int().min(100).max(20000).default(4000),
   },
   async execute(args, context) {
-    return runPython(context, "live_benchdeck_run.py", [
+    return runProductTestPython(context, "live_benchdeck_run.py", [
       "--agent-a", args.agentA,
       "--agent-b", args.agentB,
       "--plan", args.plan,
@@ -71,6 +39,6 @@ export default tool({
       "--max-output-tokens-planner", String(args.maxOutputTokensPlanner),
       "--max-output-tokens-agent", String(args.maxOutputTokensAgent),
       "--max-output-tokens-judge", String(args.maxOutputTokensJudge),
-    ])
+    ], { live: true })
   },
 })
