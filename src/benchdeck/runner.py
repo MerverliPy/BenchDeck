@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import os
 import signal
@@ -56,6 +57,33 @@ from .storage import ArtifactStore
 logger = logging.getLogger("benchdeck.runner")
 
 
+class ProgressWriter:
+    """Writes structured JSON Lines progress events for external consumers.
+
+    Each event is a single JSON object on its own line, terminated by ``\\n``.
+    Events are written atomically (buffered, flushed per-call). The file is
+    opened once on construction and closed by ``close()``.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = self._path.open("w", encoding="utf-8")
+
+    def write(self, event: dict[str, object]) -> None:
+        import json as _json
+        line = _json.dumps(event, default=str, ensure_ascii=False) + "\n"
+        self._handle.write(line)
+        self._handle.flush()
+
+    def close(self) -> None:
+        if self._handle and not self._handle.closed:
+            self._handle.close()
+
+    def __del__(self) -> None:
+        self.close()
+
+
 class BenchmarkRunner:
     def __init__(
         self,
@@ -77,11 +105,13 @@ class BenchmarkRunner:
         resume_from: Path | None = None,
         num_judges: int = 1,
         api_key: str | None = None,
+        progress_file: Path | None = None,
     ) -> None:
         self.agent_a_path = agent_a_path
         self.agent_b_path = agent_b_path
         self.output_root = output_dir
         self.plan_path = plan_path
+        self._progress = ProgressWriter(progress_file) if progress_file else None
         _planner_model = planner_model or model
         _gw_timeout = timeout if timeout is not None else 90.0
         _gw_retries = max_retries if max_retries is not None else 3
@@ -254,7 +284,25 @@ class BenchmarkRunner:
 
             if self._resume_from is None:
                 self.store.write_json("benchmark_plan.json", plan)
+                plan_file = self.store.root / "benchmark_plan.json"
+                self.metadata.plan_checksum = hashlib.sha256(plan_file.read_bytes()).hexdigest()
+            elif self.metadata.plan_checksum:
+                plan_file = self.store.root / "benchmark_plan.json"
+                actual = hashlib.sha256(plan_file.read_bytes()).hexdigest()
+                if actual != self.metadata.plan_checksum:
+                    raise RuntimeError(
+                        f"Plan checksum mismatch on resume ({actual[:12]} != "
+                        f"{self.metadata.plan_checksum[:12]}). "
+                        "The plan file has been modified since the run started."
+                    )
             logger.info("Plan loaded: %d cases across %d agents", len(plan.cases), len(labels))
+            self._write_progress({
+                "type": "plan_loaded",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "run_id": self.metadata.run_id,
+                "cases": len(plan.cases),
+                "agents": len(labels),
+            })
 
             # Preflight budget check
             budget_warnings = preflight_check(self.budget.limits, len(plan.cases), len(labels))
@@ -281,6 +329,14 @@ class BenchmarkRunner:
                         break
                     self.metadata.executions_attempted += 1
                     logger.debug("Case %d (%s) — executing", case.id, label)
+                    self._write_progress({
+                        "type": "case_start",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "case_id": case.id,
+                        "case_title": case.title,
+                        "case_family": case.family,
+                        "agent_label": label,
+                    })
                     result = self._run_case(case, label, agent_text)
                     all_runs[label].append(result)
 
@@ -296,10 +352,22 @@ class BenchmarkRunner:
                             blocks.append(block)
                             self.metadata.policy_blocks += 1
                             logger.info("Case %d (%s) — policy blocked", case.id, label)
+                            self._write_progress({
+                                "type": "case_blocked",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "case_id": case.id,
+                                "agent_label": label,
+                            })
                         else:
                             self.metadata.infrastructure_failures += 1
                             infra_errors.append(_infra_error(case, label, "agent", failed_cap))
                             logger.warning("Case %d (%s) — infrastructure failure", case.id, label)
+                            self._write_progress({
+                                "type": "case_infra_error",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "case_id": case.id,
+                                "agent_label": label,
+                            })
                         self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
                         continue
                     if result.infrastructure_error:
@@ -315,6 +383,12 @@ class BenchmarkRunner:
                         logger.warning(
                             "Case %d (%s) — infrastructure error (empty output)", case.id, label
                         )
+                        self._write_progress({
+                            "type": "case_infra_error",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "case_id": case.id,
+                            "agent_label": label,
+                        })
                         self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
                         continue
 
@@ -341,6 +415,22 @@ class BenchmarkRunner:
                             judge_idx,
                             judgment.overall_rating.value,
                         )
+                        self._write_progress({
+                            "type": "judge_complete",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "case_id": case.id,
+                            "agent_label": label,
+                            "judge_idx": judge_idx,
+                            "rating": judgment.overall_rating.value,
+                        })
+                    self._write_progress({
+                        "type": "case_done",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "case_id": case.id,
+                        "agent_label": label,
+                        "judged_so_far": self.metadata.executions_judged,
+                        "total_planned": self.metadata.executions_planned,
+                    })
                     self._checkpoint(all_runs, judgments, blocks, infra_errors, plan)
 
                 if self._shutdown:
@@ -350,6 +440,14 @@ class BenchmarkRunner:
                 self.metadata.completed_at = datetime.now(UTC).isoformat()
                 self.metadata.status = RunStatus.ABORTED
                 self.store.write_json("run_metadata.json", self.metadata)
+                self._write_progress({
+                    "type": "run_aborted",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "run_id": self.metadata.run_id,
+                    "judged": self.metadata.executions_judged,
+                    "planned": self.metadata.executions_planned,
+                    "reason": self.metadata.stop_reason,
+                })
                 return self.metadata.status
 
             # collect terminal keys and validate coverage
@@ -422,6 +520,16 @@ class BenchmarkRunner:
             )
             self.store.write_text("case_judgments.md", case_judgments_markdown(judgments))
             self.store.write_json("run_metadata.json", self.metadata)
+            self._write_progress({
+                "type": "run_complete",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "run_id": self.metadata.run_id,
+                "status": run_status.value,
+                "judged": self.metadata.executions_judged,
+                "planned": self.metadata.executions_planned,
+                "blocks": self.metadata.policy_blocks,
+                "infra": self.metadata.infrastructure_failures,
+            })
             return self.metadata.status
         except KeyboardInterrupt:
             self.metadata.completed_at = datetime.now(UTC).isoformat()
@@ -429,6 +537,14 @@ class BenchmarkRunner:
             self.metadata.stop_reason = "Interrupted by user"
             logger.warning("Run %s aborted by user", self.metadata.run_id)
             self.store.write_json("run_metadata.json", self.metadata)
+            self._write_progress({
+                "type": "run_aborted",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "run_id": self.metadata.run_id,
+                "judged": self.metadata.executions_judged,
+                "planned": self.metadata.executions_planned,
+                "reason": "Interrupted by user",
+            })
             return self.metadata.status
         except Exception as exc:
             self.metadata.completed_at = datetime.now(UTC).isoformat()
@@ -436,10 +552,22 @@ class BenchmarkRunner:
             self.metadata.stop_reason = f"{type(exc).__name__}: {exc}"
             logger.error("Run %s failed: %s", self.metadata.run_id, exc, exc_info=True)
             self.store.write_json("run_metadata.json", self.metadata)
+            self._write_progress({
+                "type": "run_error",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "run_id": self.metadata.run_id,
+                "error": str(exc),
+            })
             return self.metadata.status
         finally:
+            if self._progress is not None:
+                self._progress.close()
             self._release_lock()
             signal.signal(signal.SIGTERM, prev_sigterm)
+
+    def _write_progress(self, event: dict[str, object]) -> None:
+        if self._progress is not None:
+            self._progress.write(event)
 
     def _load_or_generate_plan(self, agent_a: str, agent_b: str | None) -> BenchmarkPlan:
         if self.plan_path:

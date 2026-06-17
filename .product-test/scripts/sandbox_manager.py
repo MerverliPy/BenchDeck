@@ -275,6 +275,25 @@ def read_python_requires(root: Path) -> str | None:
     return match.group(1) if match else None
 
 
+def image_cache_key(root: Path, python_version: str) -> str:
+    """Return a deterministic image tag based on build inputs."""
+    build_context = root / ".product-test" / "sandbox"
+    hasher = hashlib.sha256()
+    hasher.update(python_version.encode())
+    for path in sorted(build_context.rglob("*")):
+        if path.is_file():
+            hasher.update(path.read_bytes())
+    req = root / "requirements.txt"
+    if req.is_file():
+        hasher.update(req.read_bytes())
+    dev = root / "requirements-dev.txt"
+    if dev.is_file():
+        hasher.update(dev.read_bytes())
+    digest = hasher.hexdigest()[:16]
+    py = python_version.replace(".", "")
+    return f"benchdeck-product-test:{repo_key(root)}-py{py}-{digest}"
+
+
 def unique_names(run_id: str) -> tuple[str, str, str]:
     short = re.sub(r"[^a-z0-9]", "", run_id.lower())[:18]
     return (
@@ -350,6 +369,11 @@ def write_command_evidence(
     return {"stdout": str(stdout_path), "stderr": str(stderr_path), "log": str(log)}
 
 
+def _image_exists(tag: str) -> bool:
+    result = run(["docker", "image", "inspect", tag], timeout=30, check=False)
+    return result.returncode == 0
+
+
 def command_create(args: argparse.Namespace) -> dict[str, Any]:
     root = repo_root()
     assert_rootless()
@@ -373,17 +397,20 @@ def command_create(args: argparse.Namespace) -> dict[str, Any]:
     prepare_rootless_bind_tree(workspace)
     prepare_rootless_bind_tree(state_dir)
 
-    image = f"benchdeck-product-test:{repo_key(root)}-py{args.python_version.replace('.', '')}"
-    build_context = root / ".product-test" / "sandbox"
-    run(
-        [
-            "docker", "build",
-            "--build-arg", f"PYTHON_VERSION={args.python_version}",
-            "-t", image,
-            str(build_context),
-        ],
-        timeout=1200,
-    )
+    image = image_cache_key(root, args.python_version)
+    if not (args.quick and _image_exists(image)):
+        build_context = root / ".product-test" / "sandbox"
+        run(
+            [
+                "docker", "build",
+                "--build-arg", f"PYTHON_VERSION={args.python_version}",
+                "-t", image,
+                str(build_context),
+            ],
+            timeout=1200,
+        )
+    else:
+        print(f"  (quick) using cached image: {image}", file=sys.stderr)
     image_info = json.loads(
         run(["docker", "image", "inspect", image], timeout=60).stdout
     )[0]
@@ -434,7 +461,9 @@ def command_create(args: argparse.Namespace) -> dict[str, Any]:
     }
     save_state(root, state)
 
-    if args.install_dependencies:
+    if args.quick and (state_dir / "venv" / "bin" / "python").exists():
+        print("  (quick) skipping dependency install — venv already exists", file=sys.stderr)
+    elif args.install_dependencies:
         requirements = project_requirements(workspace)
         requirements_path = state_dir / "product-test-requirements.txt"
         requirements_path.write_text("\n".join(requirements) + "\n", encoding="utf-8")
@@ -630,6 +659,72 @@ def command_status(args: argparse.Namespace) -> dict[str, Any]:
     return state
 
 
+def command_exec_output(args: argparse.Namespace) -> dict[str, Any]:
+    """Execute a command and retrieve matching files from the sandbox."""
+    root = repo_root()
+    state = load_state(root)
+    cwd = args.cwd.strip("/")
+    if cwd.startswith("..") or "/../" in cwd:
+        raise ProductTestError("cwd must stay inside /workspace")
+    workdir = "/workspace" if not cwd else f"/workspace/{cwd}"
+    command_id = dt.datetime.now(dt.UTC).strftime("%H%M%S") + "-" + uuid.uuid4().hex[:8]
+    started = dt.datetime.now(dt.UTC)
+    inner = [
+        "docker", "exec",
+        "--workdir", workdir,
+        state["container"],
+        "bash", "-lc",
+        f"export PATH=/state/venv/bin:$PATH; "
+        f"timeout --signal=TERM --kill-after=5s {int(args.timeout)}s bash -c {shlex.quote(args.command)}",
+    ]
+    result = run(inner, timeout=int(args.timeout) + 20, check=False)
+    ended = dt.datetime.now(dt.UTC)
+
+    files: dict[str, str] = {}
+    if args.capture_glob:
+        glob_cmd = [
+            "docker", "exec", state["container"],
+            "bash", "-lc",
+            f"export PATH=/state/venv/bin:$PATH; "
+            f"find /workspace -type f -path '*/{args.capture_glob}' 2>/dev/null || true",
+        ]
+        paths_result = run(glob_cmd, timeout=30, check=False)
+        if paths_result.returncode == 0:
+            for rel_path in paths_result.stdout.strip().splitlines():
+                if not rel_path:
+                    continue
+                try:
+                    cat_cmd = ["docker", "exec", state["container"], "cat", rel_path]
+                    content = run(cat_cmd, timeout=30, check=False)
+                    key = rel_path.replace("/workspace/", "", 1)
+                    files[key] = redact(content.stdout)
+                except ProductTestError:
+                    pass
+
+    record = {
+        "command_id": command_id,
+        "run_id": state["run_id"],
+        "command": args.command,
+        "cwd": workdir,
+        "started_at": started.isoformat(),
+        "ended_at": ended.isoformat(),
+        "duration_seconds": (ended - started).total_seconds(),
+        "exit_code": result.returncode,
+        "evidence_class": args.evidence_class,
+        "captured_files": list(files.keys()),
+    }
+    paths = write_command_evidence(
+        root, state["run_id"], command_id, record, result.stdout, result.stderr
+    )
+    return {
+        **record,
+        **paths,
+        "files": files,
+        "stdout_preview": redact(result.stdout)[-4000:],
+        "stderr_preview": redact(result.stderr)[-4000:],
+    }
+
+
 def command_destroy(args: argparse.Namespace) -> dict[str, Any]:
     root = repo_root()
     path = state_path(root)
@@ -660,6 +755,10 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--python-version", choices=["3.11", "3.12", "3.13"], default="3.12")
     create.add_argument("--install-dependencies", action="store_true")
     create.add_argument("--replace", action="store_true")
+    create.add_argument(
+        "--quick", action="store_true",
+        help="Skip Docker build and dependency install when cached artifacts exist"
+    )
 
     status = sub.add_parser("status")
 
@@ -680,6 +779,18 @@ def parser() -> argparse.ArgumentParser:
         ],
     )
 
+    exec_output = sub.add_parser("exec-output")
+    exec_output.add_argument("--command", required=True)
+    exec_output.add_argument("--cwd", default="")
+    exec_output.add_argument("--timeout", type=int, default=300)
+    exec_output.add_argument("--capture-glob", default="", help="Glob pattern for files to retrieve (e.g. '*.json')")
+    exec_output.add_argument(
+        "--evidence-class",
+        default="LOCAL_BLACK_BOX_EVIDENCE",
+        choices=["STATIC_EVIDENCE", "SIMULATED_REGRESSION_EVIDENCE", "LOCAL_BLACK_BOX_EVIDENCE",
+                 "PTY_EVIDENCE", "LIVE_EXTERNAL_EVIDENCE", "INDEPENDENT_REPRODUCTION"],
+    )
+
     sub.add_parser("patch")
 
     destroy = sub.add_parser("destroy")
@@ -698,6 +809,8 @@ def main() -> int:
             output = command_status(args)
         elif args.action == "exec":
             output = command_exec(args)
+        elif args.action == "exec-output":
+            output = command_exec_output(args)
         elif args.action == "patch":
             output = command_patch(args)
         elif args.action == "destroy":

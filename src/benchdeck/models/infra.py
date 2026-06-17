@@ -82,6 +82,7 @@ class RunMetadata(BaseModel):
     executions_judged: int = 0
     policy_blocks: int = 0
     infrastructure_failures: int = 0
+    plan_checksum: str | None = None
 
 
 def _new_run_id() -> str:

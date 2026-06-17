@@ -31,7 +31,7 @@ def _mock_popen() -> Generator[MagicMock, None, None]:
     mock_proc = MagicMock()
     mock_proc.pid = 12345
     mock_proc.poll.return_value = None
-    with patch("benchdeck.tui._sp.Popen", return_value=mock_proc) as mock_popen:
+    with patch("benchdeck.tui.app._sp.Popen", return_value=mock_proc) as mock_popen:
         yield mock_popen
 
 
@@ -1029,7 +1029,7 @@ def test_line_attr_gate_pass_colored() -> None:
     def _fake_color_pair(n: int) -> int:
         return 0x100 * n
 
-    with patch("benchdeck.tui.curses.color_pair", side_effect=_fake_color_pair):
+    with patch("benchdeck.tui.app.curses.color_pair", side_effect=_fake_color_pair):
         attr = BenchDeckTUI._line_attr("Pass: Gate ok")
     # The Gate-Pass branch returns curses.color_pair(2).
     assert attr == 0x200
@@ -1048,7 +1048,7 @@ def test_line_attr_gate_fail_colored() -> None:
     def _fake_color_pair(n: int) -> int:
         return 0x100 * n
 
-    with patch("benchdeck.tui.curses.color_pair", side_effect=_fake_color_pair):
+    with patch("benchdeck.tui.app.curses.color_pair", side_effect=_fake_color_pair):
         attr = BenchDeckTUI._line_attr("Fail: Gate broken")
     # The rating-Fail branch returns curses.color_pair(1).
     assert attr == 0x100
@@ -2024,9 +2024,9 @@ def test_init_colors_respects_no_color_env(monkeypatch: Any) -> None:
     monkeypatch.setenv("NO_COLOR", "1")
     tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
     with (
-        patch("benchdeck.tui.curses.has_colors", return_value=True),
-        patch("benchdeck.tui.curses.start_color"),
-        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+        patch("benchdeck.tui.app.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.app.curses.start_color"),
+        patch("benchdeck.tui.app.curses.init_pair") as mock_init_pair,
     ):
         result = tui._init_colors()
     # Returns False (no color).
@@ -2043,9 +2043,9 @@ def test_init_colors_light_theme_swaps_pair_6() -> None:
     `COLOR_BLACK` background)."""
     tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="light")
     with (
-        patch("benchdeck.tui.curses.has_colors", return_value=True),
-        patch("benchdeck.tui.curses.start_color"),
-        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+        patch("benchdeck.tui.app.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.app.curses.start_color"),
+        patch("benchdeck.tui.app.curses.init_pair") as mock_init_pair,
     ):
         result = tui._init_colors()
     assert result is True
@@ -2067,9 +2067,9 @@ def test_init_colors_dark_theme_unchanged() -> None:
     callers who want to override the auto-detection."""
     tui = BenchDeckTUI(Path("/tmp/fake_run"), theme="dark")
     with (
-        patch("benchdeck.tui.curses.has_colors", return_value=True),
-        patch("benchdeck.tui.curses.start_color"),
-        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+        patch("benchdeck.tui.app.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.app.curses.start_color"),
+        patch("benchdeck.tui.app.curses.init_pair") as mock_init_pair,
     ):
         result = tui._init_colors()
     assert result is True
@@ -2091,9 +2091,9 @@ def test_init_colors_default_auto_preserves_current_palette(
     monkeypatch.delenv("NO_COLOR", raising=False)
     tui = BenchDeckTUI(Path("/tmp/fake_run"))  # theme="auto" default
     with (
-        patch("benchdeck.tui.curses.has_colors", return_value=True),
-        patch("benchdeck.tui.curses.start_color"),
-        patch("benchdeck.tui.curses.init_pair") as mock_init_pair,
+        patch("benchdeck.tui.app.curses.has_colors", return_value=True),
+        patch("benchdeck.tui.app.curses.start_color"),
+        patch("benchdeck.tui.app.curses.init_pair") as mock_init_pair,
     ):
         result = tui._init_colors()
     assert result is True

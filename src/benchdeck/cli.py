@@ -122,6 +122,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite if a prior run exists at the exact output path (rarely needed; "
         "--output-dir is a parent accumulation directory)",
     )
+    run.add_argument(
+        "--progress-file",
+        type=Path,
+        default=None,
+        help="Write JSON Lines progress events to this file",
+    )
 
     tui = sub.add_parser("tui", help="Open the live terminal dashboard")
     tui.add_argument("run_dir", type=Path)
@@ -130,6 +136,16 @@ def build_parser() -> argparse.ArgumentParser:
     tui.add_argument("--agent-b", type=Path, default=None, help="Second agent for comparison mode")
     tui.add_argument("--model", default=None, help="Model for launched runs")
     tui.add_argument("--judge-model", default=None, help="Judge model for launched runs")
+    tui.add_argument(
+        "--headless", action="store_true", help="Render to stdout without curses and exit"
+    )
+    tui.add_argument("--width", type=int, default=80, help="Terminal width for headless mode")
+    tui.add_argument(
+        "--tab", type=int, default=0, choices=[0, 1, 2, 3], help="Tab index for headless mode"
+    )
+    tui.add_argument(
+        "--watch", action="store_true", help="Re-render every --refresh seconds in headless mode"
+    )
 
     inspect_cmd = sub.add_parser("inspect", help="Audit an existing output directory")
     inspect_cmd.add_argument("run_dir", type=Path)
@@ -211,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
             resume_from=args.resume,
             num_judges=args.judges,
             api_key=api_key,
+            progress_file=args.progress_file,
         )
         status = runner.run()
         print(status.value)
@@ -218,6 +235,31 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return 2
     if args.command == "tui":
+        if args.headless:
+            if args.watch:
+                import time as _time
+                try:
+                    while True:
+                        lines = BenchDeckTUI.render_headless(
+                            args.run_dir,
+                            width=args.width,
+                            tab=args.tab,
+                        )
+                        for line in lines:
+                            print(line)
+                        print("---", flush=True)
+                        _time.sleep(args.refresh)
+                except KeyboardInterrupt:
+                    pass
+                return 0
+            lines = BenchDeckTUI.render_headless(
+                args.run_dir,
+                width=args.width,
+                tab=args.tab,
+            )
+            for line in lines:
+                print(line)
+            return 0
         BenchDeckTUI(
             args.run_dir,
             args.refresh,

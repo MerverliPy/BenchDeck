@@ -19,3 +19,4 @@ my_agent.md
 .product-test/runtime/
 # Session output logs (not artifacts)
 logs/
+Testing /

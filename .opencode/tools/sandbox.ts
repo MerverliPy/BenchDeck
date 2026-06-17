@@ -39,11 +39,13 @@ export const create = tool({
     pythonVersion: tool.schema.enum(["3.11", "3.12", "3.13"]).default("3.12"),
     installDependencies: tool.schema.boolean().default(true),
     replace: tool.schema.boolean().default(false),
+    quick: tool.schema.boolean().default(false).describe("Skip Docker build and dependency install when cached"),
   },
   async execute(args, context) {
     const command = ["create", "--python-version", args.pythonVersion]
     if (args.installDependencies) command.push("--install-dependencies")
     if (args.replace) command.push("--replace")
+    if (args.quick) command.push("--quick")
     return runPython(context, "sandbox_manager.py", command)
   },
 })
@@ -77,6 +79,33 @@ export const exec = tool({
       "--timeout", String(args.timeoutSeconds),
       "--evidence-class", args.evidenceClass,
     ])
+  },
+})
+
+export const exec_with_output = tool({
+  description: "Execute a command inside the sandbox and retrieve matching output files",
+  args: {
+    command: tool.schema.string().min(1).describe("Command to execute inside /workspace"),
+    cwd: tool.schema.string().default("").describe("Relative directory under /workspace"),
+    timeoutSeconds: tool.schema.number().int().min(1).max(3600).default(300),
+    captureGlob: tool.schema.string().default("").describe("Glob pattern for files to retrieve (e.g. '*.json', '*.md')"),
+    evidenceClass: tool.schema.enum([
+      "STATIC_EVIDENCE",
+      "SIMULATED_REGRESSION_EVIDENCE",
+      "LOCAL_BLACK_BOX_EVIDENCE",
+      "INDEPENDENT_REPRODUCTION",
+    ]).default("LOCAL_BLACK_BOX_EVIDENCE"),
+  },
+  async execute(args, context) {
+    const cmd = [
+      "exec-output",
+      "--command", args.command,
+      "--cwd", args.cwd,
+      "--timeout", String(args.timeoutSeconds),
+      "--evidence-class", args.evidenceClass,
+    ]
+    if (args.captureGlob) cmd.push("--capture-glob", args.captureGlob)
+    return runPython(context, "sandbox_manager.py", cmd)
   },
 })
 

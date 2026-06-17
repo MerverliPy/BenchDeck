@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import re
+
 import pytest
 
 from benchdeck.models import (
@@ -430,3 +432,78 @@ def make_fake_stdscr() -> Any:
         return _FakeStdscr(height, width, colors=colors)
 
     return _make
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TUI output assertion helpers
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def assert_tui_contains(lines: list[str], substring: str, /) -> None:
+    """Assert that at least one TUI output line contains *substring*."""
+    if not any(substring in line for line in lines):
+        __tracebackhide__ = True
+        all_text = "\n".join(lines)
+        raise AssertionError(
+            f"Expected TUI output to contain {substring!r}, but it was not found.\n"
+            f"--- output ({len(lines)} lines) ---\n{all_text}"
+        )
+
+
+def assert_tui_not_contains(lines: list[str], substring: str, /) -> None:
+    """Assert that no TUI output line contains *substring*."""
+    for lineno, line in enumerate(lines):
+        if substring in line:
+            __tracebackhide__ = True
+            raise AssertionError(
+                f"Expected TUI output NOT to contain {substring!r}, "
+                f"but found it at line {lineno}: {line!r}"
+            )
+
+
+def assert_tui_matches(lines: list[str], pattern: str, /) -> None:
+    """Assert that at least one TUI output line matches *pattern* (regex)."""
+    compiled = re.compile(pattern)
+    for line in lines:
+        if compiled.search(line):
+            return
+    __tracebackhide__ = True
+    all_text = "\n".join(lines)
+    raise AssertionError(
+        f"Expected TUI output to match regex {pattern!r}, but it was not found.\n"
+        f"--- output ({len(lines)} lines) ---\n{all_text}"
+    )
+
+
+def assert_tui_line_count(lines: list[str], expected: int, /) -> None:
+    """Assert that the TUI output has exactly *expected* lines."""
+    __tracebackhide__ = True
+    assert len(lines) == expected, (
+        f"Expected {expected} lines of TUI output, got {len(lines)}"
+    )
+
+
+def assert_tui_line(lines: list[str], index: int, expected: str, /) -> None:
+    """Assert that the line at *index* (0-based in *lines*) equals *expected*."""
+    __tracebackhide__ = True
+    if index < 0 or index >= len(lines):
+        raise AssertionError(
+            f"Line index {index} out of range for {len(lines)} lines"
+        )
+    assert lines[index] == expected, (
+        f"Expected line {index} to be {expected!r}, got {lines[index]!r}"
+    )
+
+
+def assert_tui_progress(lines: list[str], judged: int, total: int, /) -> None:
+    """Assert that the Overview tab shows a progress line with *judged/total*."""
+    substring = f"{judged}/{total}"
+    for line in lines:
+        if "Progress" in line and substring in line:
+            return
+    __tracebackhide__ = True
+    all_text = "\n".join(lines)
+    raise AssertionError(
+        f"Expected progress {judged}/{total} in TUI output, but it was not found.\n"
+        f"--- output ---\n{all_text}"
+    )

@@ -5,13 +5,18 @@ import curses
 import datetime
 import os
 import subprocess as _sp
-import textwrap
 import time
 from pathlib import Path
 from typing import Any
 
-from .loader import Snapshot, load_snapshot
-from .manifest import Manifest
+from ..loader import Snapshot, load_snapshot
+from ..manifest import Manifest
+from .helpers import (
+    _filter_matches,
+    _rating_order,
+    _section,
+    _status_mark_for_state,
+)
 
 
 class BenchDeckTUI:
@@ -19,10 +24,6 @@ class BenchDeckTUI:
 
     TABS = ("Overview", "Cases", "Detail", "Help")
 
-    # Per-tab contextual footer hints. The first entry is the most
-    # salient for the tab; later entries fill in secondary keys. The
-    # render function joins with " | " at width >= 56, or falls back to
-    # the short form ("1-4 tabs · j/k move · q quit") at width < 56.
     FOOTER_HINTS: dict[int, list[str]] = {
         0: ["h/l tabs", "j/k move", "n run", "r reload", "q quit"],
         1: ["Enter open", "e export", "j/k move", "h/l tabs", "q quit"],
@@ -64,57 +65,45 @@ class BenchDeckTUI:
         self._has_color = False
         self._stderr_handle: Any = None
         self._stderr_log: Path | None = None
-        # P2-3 (default-off): when True, _overview appends a
-        # `Last refresh: Ns ago` line on every draw and, while a
-        # subprocess is alive, a `Run alive: yes · Ns elapsed` line.
-        # Defaults to False so the live TUI output is unchanged.
         self.enable_heartbeat = enable_heartbeat
-        # P2-6 (default-off): when True and `infrastructure_failures > 0`,
-        # _overview appends a 1-line `Infra failures: N (see Detail tab)`
-        # pointer to draw the user's attention to the per-case error
-        # details on the Detail tab. Defaults to False so the live
-        # TUI output is unchanged.
         self.enable_infra_pointer = enable_infra_pointer
-        # P2-1 (default-off): when True, the Cases tab supports a
-        # filter (`f` to open a one-line prompt; `family:`, `state:`,
-        # `rating:`, or free-text substring) and a sort cycle (`s`
-        # among `id`, `family`, `rating`). Filter and sort persist
-        # across tab switches and are reset on `r` (reload). Defaults
-        # to False so the live TUI output is unchanged.
         self.enable_case_filter = enable_case_filter
         self._filter: str = ""
         self._sort: str = "id"
         self._filter_mode: bool = False
         self._filter_draft: str = ""
-        # P2-2 (default-off): when True and a subprocess is alive,
-        # `_overview` appends a `Subprocess log (last N of M lines):`
-        # section showing the tail of the captured stderr log file.
-        # The read is capped at 4 KiB from the end; the displayed
-        # tail is the last 8 lines. Defaults to False so the live
-        # TUI output is unchanged.
         self.enable_log_tail = enable_log_tail
-        # P2-5 (default-off): when True, the Cases tab supports
-        # multi-select for batch export. `space` (ord 32) toggles
-        # the current case's mark (a `set[int]` of case IDs in
-        # `self._marked`); `E` exports all marked cases to a
-        # single combined `cases_<ts>.md` file. Marked rows
-        # display a leading `*` column. Reload (`r`) clears the
-        # marks. Defaults to False so the live TUI output is
-        # unchanged. The existing single-case `e` export is
-        # preserved as a shortcut for the current case.
         self.enable_batch_export = enable_batch_export
         self._marked: set[int] = set()
-        # P2-4: theme stub. The default ("auto") respects the
-        # `NO_COLOR` env var (per https://no-color.org/) and uses
-        # the current default palette (pair 6 = BLACK on CYAN).
-        # "light" swaps pair 6 to BLACK on WHITE so the header
-        # band is visible on light-terminal backgrounds. "dark"
-        # is an explicit declaration of the default palette and
-        # is byte-identical to "auto" with no NO_COLOR set.
-        # All rating colors (pairs 1-5) are unchanged across
-        # themes. Defaults to "auto" so the live TUI output
-        # is unchanged.
         self.theme = theme
+
+    @classmethod
+    def render_headless(
+        cls,
+        run_dir: Path,
+        width: int = 80,
+        tab: int = 0,
+        enable_heartbeat: bool = False,
+        enable_infra_pointer: bool = False,
+        enable_case_filter: bool = False,
+        enable_log_tail: bool = False,
+        enable_batch_export: bool = False,
+        theme: str = "auto",
+    ) -> list[str]:
+        tui = cls(
+            run_dir=run_dir,
+            refresh_seconds=0,
+            enable_heartbeat=enable_heartbeat,
+            enable_infra_pointer=enable_infra_pointer,
+            enable_case_filter=enable_case_filter,
+            enable_log_tail=enable_log_tail,
+            enable_batch_export=enable_batch_export,
+            theme=theme,
+        )
+        tui.snapshot = load_snapshot(run_dir)
+        tui.tab = max(0, min(3, tab))
+        tui.last_load = time.monotonic()
+        return tui._render(width)
 
     def run(self) -> None:
         curses.wrapper(self._main)
@@ -145,19 +134,15 @@ class BenchDeckTUI:
     def _handle_key(self, key: int) -> None:
         if key != ord("x") and self._cancel_requested_at is not None:
             self._cancel_requested_at = None
-        # P2-1: when the filter prompt is open, the prompt captures
-        # all keys (Enter apply, Esc cancel, Backspace, printable ASCII).
-        # Other keys are ignored. This is a transient mode — it does
-        # not affect tab navigation or quit.
         if self._filter_mode and self.enable_case_filter:
-            if key in (10, 13):  # Enter
+            if key in (10, 13):
                 self._filter = self._filter_draft
                 self._filter_mode = False
                 self._status_msg = (
                     f"Filter applied: {self._filter!r}" if self._filter else "Filter cleared"
                 )
                 return
-            if key == 27:  # Esc
+            if key == 27:
                 self._filter_draft = self._filter
                 self._filter_mode = False
                 self._status_msg = "Filter cancelled"
@@ -165,7 +150,7 @@ class BenchDeckTUI:
             if key in (curses.KEY_BACKSPACE, 127, 8):
                 self._filter_draft = self._filter_draft[:-1]
                 return
-            if 0x20 <= key < 0x7F:  # printable ASCII
+            if 0x20 <= key < 0x7F:
                 self._filter_draft += chr(key)
                 return
             return
@@ -189,27 +174,16 @@ class BenchDeckTUI:
             else:
                 self.scroll = max(0, self.scroll - 1)
         elif key in (10, 13) and self.tab == 1:
-            # Enter on Cases → Detail. The filter prompt (P2-1) uses
-            # Enter to apply the filter, but that branch is handled
-            # in the `_filter_mode` early-return at the top of this
-            # method, so reaching this branch implies the prompt is
-            # closed and the original Cases→Detail semantics apply.
             self.tab = 2
             self.scroll = 0
         elif key == ord("f") and self.tab == 1 and self.enable_case_filter:
-            # Open the filter prompt. The draft is pre-populated with
-            # the current filter so the user can edit in place.
             self._filter_mode = True
             self._filter_draft = self._filter
         elif key == ord("s") and self.tab == 1 and self.enable_case_filter:
-            # Cycle sort among id, family, rating.
             cycle = {"id": "family", "family": "rating", "rating": "id"}
             self._sort = cycle.get(self._sort, "id")
             self._status_msg = f"Sort: {self._sort}"
         elif key == ord(" ") and self.tab == 1 and self.enable_batch_export:
-            # P2-5: toggle the mark of the currently selected case.
-            # The `set` semantics add the id if absent, remove it if
-            # present. No-op if there is no selected case.
             cases = self._cases()
             if cases:
                 self.selected = min(self.selected, len(cases) - 1)
@@ -221,16 +195,13 @@ class BenchDeckTUI:
                     else:
                         self._marked.add(cid)
         elif key == ord("E") and self.tab == 1 and self.enable_batch_export:
-            # P2-5: export all marked cases to a combined markdown file.
             self._export_marked()
         elif key == ord("r"):
             self.snapshot = load_snapshot(self.run_dir)
             self.last_load = time.monotonic()
-            # P2-1: reload also resets filter and sort to defaults.
             if self.enable_case_filter:
                 self._filter = ""
                 self._sort = "id"
-            # P2-5: reload also clears marked cases.
             if self.enable_batch_export:
                 self._marked = set()
         elif key == ord("e") and self.tab == 1:
@@ -250,10 +221,6 @@ class BenchDeckTUI:
         title = " BENCHDECK "
         proc_info = f" PID:{self._proc.pid}" if self._proc else ""
         status = str(self.snapshot.metadata.get("status", "no run"))
-        # Title age suffix: only at width >= 48 to preserve the 32-47
-        # column band for the title text. The age is recomputed on
-        # every draw (so it advances as time passes) but the suffix is
-        # not shown before the first `load_snapshot` call (last_load=0).
         title_str = title + f"[{status}]{proc_info}"
         if self.last_load > 0 and width >= 48:
             elapsed = int(time.monotonic() - self.last_load)
@@ -297,9 +264,6 @@ class BenchDeckTUI:
                 self._safe_add(stdscr, 2, width - 2, " ↑", width)
             if self.scroll < max_scroll:
                 self._safe_add(stdscr, 2 + view_height - 1, width - 2, " ↓", width)
-        # P2-1: the filter prompt, when active, takes priority over
-        # both `_status_msg` and the normal tab hint. The prompt shows
-        # the live draft (with a block cursor) and a hint to apply/cancel.
         if self._filter_mode and self.enable_case_filter:
             status = f"Filter: {self._filter_draft}█  (Enter apply, Esc cancel)"
         else:
@@ -370,20 +334,8 @@ class BenchDeckTUI:
                 lines.append(f"  WARNING: planner terminal error: {msg}")
             if pc.get("parse_error"):
                 lines.append(f"  WARNING: planner parse error: {pc['parse_error']}")
-        # P2-6: infra-error pointer at the bottom of the Overview header.
-        # Gated by `enable_infra_pointer` (default False) and suppressed
-        # when `infra == 0` (nothing to point at). The pointer is a
-        # separate line from the always-on `Infra failures: N` summary
-        # that already lives in the base 4-line header — this one is a
-        # call-out that points the user to the Detail tab for per-case
-        # error details.
         if self.enable_infra_pointer and infra > 0:
             lines.append(f"Infra failures: {infra} (see Detail tab)")
-        # P2-3: heartbeat lines at the bottom of the Overview header.
-        # Gated by `enable_heartbeat` (default False). `last_load` is 0
-        # before the first `load_snapshot` call, so the "Last refresh"
-        # line is suppressed until the first successful load (mirrors
-        # the P1-2 title-age guard).
         if self.enable_heartbeat:
             if self.last_load > 0:
                 refresh_elapsed = int(time.monotonic() - self.last_load)
@@ -392,7 +344,6 @@ class BenchDeckTUI:
                 run_elapsed = int(time.monotonic() - self._proc_started_at)
                 lines.append(f"Run alive: yes · {run_elapsed}s elapsed")
         lines.append("")
-        # Manifest / integrity status
         manifest = Manifest.load(self.run_dir)
         gen = manifest.generation
         if gen > 0:
@@ -406,13 +357,6 @@ class BenchDeckTUI:
         else:
             lines.append("Manifest: not yet present")
         lines.append("")
-        # P2-2 (default-off): live stderr-log tail. When a subprocess
-        # is alive (self._proc is not None) and the captured log file
-        # exists, read up to 4 KiB from the end and display the last
-        # 8 lines. The section header reports the captured line count
-        # and the file size in bytes. The flag defaults to False so
-        # the live TUI output is unchanged. I/O is bounded by
-        # Path.read_text() and the 4 KiB cap.
         if (
             self.enable_log_tail
             and self._proc is not None
@@ -452,9 +396,7 @@ class BenchDeckTUI:
         return lines
 
     def _render_agent_section(self, agent_label: str, agent_tally: dict[str, Any]) -> list[str]:
-        lines = [
-            "Ratings (0-4 scale)",
-        ]
+        lines = ["Ratings (0-4 scale)"]
         for name in ("Excellent", "Strong", "Acceptable", "Weak", "Fail"):
             count = (agent_tally.get("rating_counts") or {}).get(name, 0)
             lines.append(f"  {name:<10} {count}")
@@ -473,24 +415,10 @@ class BenchDeckTUI:
             if cid is not None:
                 judgments_by_case.setdefault(cid, []).append(j)
         blocks = {b.get("case_id"): b for b in self.snapshot.policy_blocks}
-        # Header counts: total, judged, blocked. Computed against the set
-        # of case IDs that are actual integers (matches the row-render
-        # filter below so a malformed plan does not skew the counts).
         case_ids = {c.get("id") for c in cases if isinstance(c.get("id"), int)}
         total = len(case_ids)
         judged = sum(1 for cid in case_ids if cid in judgments_by_case)
         blocked = sum(1 for cid in case_ids if cid in blocks)
-        # P2-1 (default-off): when `enable_case_filter` is True, build
-        # the visible list by applying `self._filter` and `self._sort`,
-        # and update the header to show filtered counts and the active
-        # sort. The selected index is re-clamped to the new visible
-        # length. When the flag is False (the default), the original
-        # header format and ordering are preserved verbatim.
-        # `visible` is always a list (initialized empty; the P2-1
-        # branch appends to it). The path choice below uses
-        # `self.enable_case_filter` directly, so we never need a None
-        # sentinel — this keeps the type annotation clean and the
-        # mypy strict-mode check happy.
         visible: list[tuple[dict[str, Any], str]] = []
         if self.enable_case_filter:
             for case in cases:
@@ -515,7 +443,6 @@ class BenchDeckTUI:
                 )
             elif self._sort == "rating":
                 visible.sort(key=lambda cs: (_rating_order(cs[1]), cs[0].get("id", 0)))
-            # "id" sort preserves plan.cases insertion order.
             if visible:
                 self.selected = min(self.selected, len(visible) - 1)
             else:
@@ -530,13 +457,9 @@ class BenchDeckTUI:
         else:
             header = f"Cases: {total} total · {judged} judged · {blocked} blocked"
         if len(header) > width:
-            # Truncate to width chars; the curses display will further
-            # clip to width-1 visible cells. The header still begins
-            # with "Cases: N total …" so the meaning is preserved.
             header = header[:width]
         lines = [header]
         if not self.enable_case_filter:
-            # Original rendering path (gated off by `enable_case_filter`).
             for index, case in enumerate(cases):
                 case_id = case.get("id")
                 if not isinstance(case_id, int):
@@ -553,28 +476,16 @@ class BenchDeckTUI:
                     state = "BLOCKED"
                 else:
                     state = "PENDING"
-                # Prepend a worst-case status mark so each row carries a
-                # quick visual signal: [✓] pass, [!] warn, [X] fail/blocked.
                 mark = _status_mark_for_state(state)
                 if mark:
                     state = f"{mark} {state}"
                 marker = ">" if index == self.selected else " "
-                # P2-5: a leading `*` column on marked rows when the
-                # batch-export feature is on. When the feature is
-                # off, `star` is the empty string so the prefix is
-                # byte-identical to the original (4 chars; `>` at
-                # column 0). When the feature is on, `star` is
-                # either `*` (marked) or ` ` (unmarked), widening
-                # the prefix to 5 chars and shifting `>` to column 1.
                 star = ("*" if case_id in self._marked else " ") if self.enable_batch_export else ""
                 title = str(case.get("title", "Untitled"))
                 prefix = f"{star}{marker}{case_id:>2} "
                 available = max(8, width - len(prefix) - len(state) - 1)
                 lines.append(prefix + state + " " + title[:available])
         else:
-            # P2-1 rendering path. `index` is the position in the
-            # filtered+sorted visible list, so the `>` marker is
-            # always on a row that is actually visible.
             for index, (case, state) in enumerate(visible):
                 case_id = case.get("id")
                 if not isinstance(case_id, int):
@@ -583,8 +494,6 @@ class BenchDeckTUI:
                 if mark:
                     state = f"{mark} {state}"
                 marker = ">" if index == self.selected else " "
-                # P2-5: leading `*` on marked rows (gated; same
-                # semantics as the default-path branch above).
                 star = ("*" if case_id in self._marked else " ") if self.enable_batch_export else ""
                 title = str(case.get("title", "Untitled"))
                 prefix = f"{star}{marker}{case_id:>2} "
@@ -643,7 +552,6 @@ class BenchDeckTUI:
                     ]
             else:
                 lines += ["No judgment yet."]
-        # Show disagreement when multiple judges differ
         if len(case_judgments) > 1:
             ratings = {j.get("overall_rating", "?") for j in case_judgments}
             if len(ratings) > 1:
@@ -775,12 +683,6 @@ class BenchDeckTUI:
             self._status_msg = f"Export failed: {exc}"
 
     def _export_marked(self) -> None:
-        """P2-5: export all marked cases to a single combined
-        `cases_<ts>.md` file in `run_dir`. Each marked case gets a
-        `## Case N: Title` section with the same body as the
-        single-case `_export_case` output. No-op (with a status
-        message) when `self._marked` is empty or when no case in
-        the plan is currently marked."""
         if not self._marked:
             self._status_msg = "No marked cases to export"
             return
@@ -789,9 +691,6 @@ class BenchDeckTUI:
             cid = case.get("id")
             if isinstance(cid, int):
                 cases_by_id[cid] = case
-        # Honour the order in which cases appear in the plan (i.e.
-        # by id ascending), not the order in which the user marked
-        # them. This gives a stable, predictable file layout.
         marked_ids = sorted(cid for cid in self._marked if cid in cases_by_id)
         if not marked_ids:
             self._status_msg = "No marked cases to export (none match plan)"
@@ -853,8 +752,6 @@ class BenchDeckTUI:
         try:
             Path(filename).write_text("\n".join(lines), encoding="utf-8")
             self._status_msg = f"Exported {len(marked_ids)} cases to {filename}"
-            # Marks are one-shot: clear them after a successful export
-            # so a second `E` press does not re-export the same set.
             self._marked = set()
         except OSError as exc:
             self._status_msg = f"Export failed: {exc}"
@@ -875,8 +772,6 @@ class BenchDeckTUI:
             self._proc = None
             self._proc_run_dir = None
             self._stderr_log = None
-            # P2-3: reset heartbeat start so the "Run alive" line does
-            # not briefly persist after the subprocess has exited.
             self._proc_started_at = 0.0
 
     def _launch_run(self) -> None:
@@ -922,9 +817,6 @@ class BenchDeckTUI:
                 stderr=_sp.STDOUT,
             )
             self._proc_run_dir = run_dir
-            # P2-3: monotonic start time for the "Run alive" heartbeat line.
-            # Set only after Popen succeeds so a failed launch does not
-            # leave a stale timestamp.
             self._proc_started_at = time.monotonic()
             self._status_msg = f"Launched PID {self._proc.pid} → {run_dir.name}"
         except OSError as exc:
@@ -959,7 +851,6 @@ class BenchDeckTUI:
         self._proc = None
         self._proc_run_dir = None
         self._stderr_log = None
-        # P2-3: reset heartbeat start on cancel.
         self._proc_started_at = 0.0
 
     @staticmethod
@@ -976,13 +867,7 @@ class BenchDeckTUI:
             scroll = max(0, min(scroll, max_scroll))
         return scroll
 
-    # ── colour support ──────────────────────────────────────────────────────
-
     def _init_colors(self) -> bool:
-        # P2-4: honor the NO_COLOR env var only when the theme is
-        # "auto" (the default). An explicit theme choice ("dark" or
-        # "light") overrides the env var. Per https://no-color.org/,
-        # any non-empty value of NO_COLOR disables color output.
         if self.theme == "auto" and os.environ.get("NO_COLOR"):
             return False
         if not curses.has_colors():
@@ -991,17 +876,11 @@ class BenchDeckTUI:
             curses.start_color()
         except curses.error:
             return False
-        # Standard 8-color palette for maximum terminal compatibility.
-        # Pair 0 is always white-on-black and reserved.
         curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
         curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
         curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)
         curses.init_pair(4, curses.COLOR_BLUE, curses.COLOR_BLACK)
         curses.init_pair(5, curses.COLOR_CYAN, curses.COLOR_BLACK)
-        # P2-4: pair 6 is the header/footer band. For "light"
-        # theme, swap to BLACK on WHITE so the band is visible
-        # on light-terminal backgrounds. For "dark" (or "auto"
-        # without NO_COLOR), use the current default BLACK on CYAN.
         if self.theme == "light":
             curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_WHITE)
         else:
@@ -1010,12 +889,6 @@ class BenchDeckTUI:
 
     @staticmethod
     def _line_attr(line: str) -> int:
-        """Return the curses colour-pair attribute for a content line.
-
-        Pattern-matches keywords that appear in TUI content lines.
-        Returns 0 (default) for uncoloured text.
-        """
-        # Ratings (whole-word detection via surrounding spaces / line boundaries)
         for rating, pair in [
             ("Excellent", 2),
             ("Strong", 4),
@@ -1024,7 +897,6 @@ class BenchDeckTUI:
             ("Fail", 1),
         ]:
             if rating in line:
-                # Avoid partial-word matches inside longer text
                 idx = line.find(rating)
                 if idx >= 0:
                     boundary = (" ", "[", ":", "]", ",", "(")
@@ -1033,157 +905,20 @@ class BenchDeckTUI:
                     after_ok = after_end == len(line) or line[after_end] in boundary
                     if before_ok and after_ok:
                         return curses.color_pair(pair)
-        # BLOCKED state
         if "BLOCKED" in line:
-            return curses.color_pair(1)  # red
-        # Progress bar hash fill
+            return curses.color_pair(1)
         stripped = line.lstrip()
         if stripped.startswith("Progress [") and "#" in stripped:
-            return curses.color_pair(2)  # green
-        # WARNING lines
+            return curses.color_pair(2)
         if "WARNING" in line:
-            return curses.color_pair(3)  # yellow
-        # Gate Pass / Fail
+            return curses.color_pair(3)
         if "Pass" in line and "Gate" in line:
-            return curses.color_pair(2)  # green
+            return curses.color_pair(2)
         if "Fail" in line and "Gate" in line:
-            return curses.color_pair(1)  # red
+            return curses.color_pair(1)
         return 0
-
-    # ── rendering helpers ───────────────────────────────────────────────────
 
     @staticmethod
     def _safe_add(stdscr: Any, row: int, col: int, text: str, width: int, attr: int = 0) -> None:
         with contextlib.suppress(curses.error):
             stdscr.addnstr(row, col, text, max(0, width - col - 1), attr)
-
-
-def _wrap(text: str, width: int) -> list[str]:
-    return textwrap.wrap(text, width=max(12, width - 1), replace_whitespace=False) or [""]
-
-
-def _section(title: str, text: str, width: int, prefix: str = "") -> list[str]:
-    """Wrap `text` into a section block with a `title` heading.
-
-    The first line is the `title` (un-prefixed). The wrapped body
-    lines are each prefixed with `prefix` (default empty string) so
-    callers can mark code-ish output sections with a leading glyph.
-    The wrap width is reduced by `len(prefix)` so the prefixed lines
-    still fit within the available `width`.
-    """
-    lines = [title]
-    wrap_width = max(12, width - 1)
-    if prefix:
-        wrap_width = max(12, width - 1 - len(prefix))
-    for paragraph in text.splitlines() or [""]:
-        wrapped = _wrap(paragraph, wrap_width)
-        if prefix:
-            wrapped = [prefix + line for line in wrapped]
-        lines.extend(wrapped)
-    lines.append("")
-    return lines
-
-
-def _status_mark_for_state(state: str) -> str:
-    """Return the status mark prefix for a case-list state string.
-
-    The state is one of:
-      - "BLOCKED" → "[X]"
-      - "Rating[agent] Rating[agent] …" (one or more tokens) → worst-case
-        mark among the rating tokens:
-          Fail                → "[X]"
-          Acceptable / Weak   → "[!]"
-          Excellent / Strong  → "[✓]"
-      - "PENDING" or anything unrecognized → "" (no mark)
-
-    The worst-case rule means a case with two judges (Strong + Fail)
-    is marked "[X]" not "[✓]". This is the natural semantics for
-    "what is the verdict for this case" — the worst rating wins.
-    """
-    if state == "BLOCKED":
-        return "[X]"
-    ratings: list[str] = []
-    for token in state.split():
-        if "[" in token:
-            ratings.append(token.split("[", 1)[0])
-    if not ratings:
-        return ""
-    if any(r == "Fail" for r in ratings):
-        return "[X]"
-    if any(r in ("Acceptable", "Weak") for r in ratings):
-        return "[!]"
-    if all(r in ("Excellent", "Strong") for r in ratings):
-        return "[✓]"
-    return ""
-
-
-def _filter_matches(filter_str: str, case: dict[str, Any], state: str) -> bool:
-    """P2-1: return True if `case` matches the active filter string.
-
-    An empty filter matches every case. Recognised prefixes:
-      - `family:foo`     — `case["family"]` equals `foo` (case-insensitive)
-      - `state:BLOCKED`  — `state` equals "BLOCKED" (case-insensitive)
-      - `state:JUDGED`   — `state` is not PENDING and not BLOCKED
-      - `state:PENDING`  — `state` equals "PENDING"
-      - `rating:Foo`     — any token in `state` (split on whitespace)
-                           starts with the rating `Foo` (case-insensitive)
-    Anything else is treated as a free-text substring and matched
-    against `case["title"]` (case-insensitive). A whitespace-only
-    filter is treated as empty.
-    """
-    f = filter_str.strip()
-    if not f:
-        return True
-    if ":" in f:
-        key, _, val = f.partition(":")
-        key = key.strip().lower()
-        val = val.strip()
-        if key == "family":
-            return str(case.get("family", "")).lower() == val.lower()
-        if key == "state":
-            v = val.upper()
-            if v == "JUDGED":
-                return state != "PENDING" and state != "BLOCKED"
-            if v == "PENDING":
-                return state == "PENDING"
-            return state.upper() == v
-        if key == "rating":
-            v = val.lower()
-            return any(token.lower().startswith(v) for token in state.split())
-    return f.lower() in str(case.get("title", "")).lower()
-
-
-# P2-1: rating-bucket order used by `_sort = "rating"`. Lower numbers
-# sort first ("worst first") so triage surfaces problems. BLOCKED is
-# treated as worse than any rating, and unrecognized states sort last.
-_RATING_ORDER: dict[str, int] = {
-    "BLOCKED": 0,
-    "Fail": 1,
-    "Weak": 2,
-    "Acceptable": 3,
-    "Strong": 4,
-    "Excellent": 5,
-    "PENDING": 6,
-}
-
-
-def _rating_order(state: str) -> int:
-    """P2-1: return the numeric ordering for a case's state string,
-    used as the primary sort key when `_sort == "rating"`. The order
-    is worst-first (BLOCKED < Fail < Weak < Acceptable < Strong <
-    Excellent < PENDING < unrecognised). For a multi-rating state, the
-    worst rating present in the state wins, mirroring the
-    `_status_mark_for_state` semantics."""
-    if state == "BLOCKED":
-        return _RATING_ORDER["BLOCKED"]
-    if state == "PENDING":
-        return _RATING_ORDER["PENDING"]
-    worst = len(_RATING_ORDER)
-    for token in state.split():
-        if "[" not in token:
-            continue
-        rating = token.split("[", 1)[0]
-        rank = _RATING_ORDER.get(rating, len(_RATING_ORDER))
-        if rank < worst:
-            worst = rank
-    return worst
