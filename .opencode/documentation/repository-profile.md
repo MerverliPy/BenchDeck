@@ -8,7 +8,7 @@
 - One-sentence purpose: Evidence-preserving LLM-agent benchmark harness with a live, narrow-terminal SSH dashboard, including mobile Termius use.
 - Primary audiences: people evaluating Markdown-defined LLM agents, developers integrating or inspecting benchmark runs, contributors, and maintainers.
 - Repository type: Python 3.11+ CLI application/library with a `curses` terminal UI.
-- Current package version: `0.1.0`; no separate supported-release-line policy is defined.
+- Current package version: `0.1.3` (from `pyproject.toml`); no separate supported-release-line policy is defined.
 - Default branch: `main`
 
 ## Canonical documentation and evidence

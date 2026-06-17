@@ -1,8 +1,8 @@
 # BenchDeck — Remaining Issues
 
-**Date:** 2026-06-13
-**Baseline:** 408 tests pass (2 skipped) · ruff clean · ruff format clean · mypy clean (strict on `src/` and `tests/`) · 84% coverage
-**Status:** All Phase 1-7 features implemented. All 20 prior audit findings resolved and revalidated. 2026-06-13 full product test (run id `20260613T191610Z-a5e38c42`): 0 P0, 0 P1, 1 P2 (loader contract drift — resolved in commit `bcbf396` with `strict=True` opt-in), 5 P3 (3 environment-blocked, 1 spec conflict, 1 perf note). Live OpenAI evidence BLOCKED by sandbox network policy + no dedicated test key; Python 3.11/3.13 matrix BLOCKED by sandbox image (covered by CI on `push` to `main`).
+**Date:** 2026-06-17
+**Baseline:** 412 tests pass (2 skipped) . ruff clean . ruff format clean . mypy clean (strict on `src/` and `tests/`) . 84% coverage
+**Status:** All Phase 1-7 features implemented. All 20 prior audit findings resolved and revalidated. 5 additional items resolved 2026-06-17 (AGENTS.md, opencode.jsonc, dependency lockfile, concurrent-writer lock, admin-verification checklist).
 
 ---
 
@@ -52,14 +52,23 @@ All findings from the first 2026-06-12 audit round are resolved. See `AGENT_HAND
 
 ---
 
+## Resolved (2026-06-17)
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| DOC-1 | No root `AGENTS.md` | Created `AGENTS.md` at repo root with concise operational rules |
+| DOC-2 | No `opencode.jsonc` | Created `opencode.jsonc` with global defaults, tool registrations, and agent references |
+| DOC-3 | No dependency lockfile | Generated `requirements.lock` and `requirements-dev.lock` via `uv pip compile` |
+| DOC-4 | `ArtifactStore` no concurrent-writer protection | Added optional `portalocker`-based cross-process lock to `ArtifactStore`; 3 new tests |
+| DOC-5 | No admin verification checklist | Created `docs/admin-verification.md` with `gh api` commands for hosted-settings verification |
+
 ## Remaining Known Limitations
 
 - **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`, supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing — see `docs/publish.md`) and release with SBOM (`release.yml`) exist; no tag has produced a successful publish yet. The first tag push (`v0.1.2`) failed at the Trusted Publishing exchange because no PyPI publisher is configured for this repo yet.
 - **Inspector hardening partial.** `inspect.py` validates schema and manifest checksums (via `manifest.verify()`); referential integrity and counter consistency checks remain pending.
-- **No cross-process run lock.** `storage.py` uses atomic writes but concurrent writers could race.
 - **No Windows testing.** Developed and tested on Linux only.
-- **No dependency lock file.** `requirements.txt` provides reproducible pins; no `requirements.lock` or `uv.lock`.
 - **`dist/` artifacts stale.** (Built 2026-06-11; source has changed.) Not committed — `dist/` is gitignored.
+- **Hosted-settings verification required.** `docs/admin-verification.md` documents the checklist, but `gh api` commands require admin access to run.
 
 ---
 
@@ -72,4 +81,4 @@ python -m mypy --no-incremental src/benchdeck
 python -m pytest -q
 ```
 
-Expected: all clean, 408 tests passed (2 skipped).
+Expected: all clean, 412 tests passed (2 skipped).

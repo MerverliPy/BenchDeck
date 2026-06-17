@@ -6,10 +6,9 @@ makes a live API call — everything is constructed in-process.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
-
-import re
 
 import pytest
 
@@ -478,18 +477,14 @@ def assert_tui_matches(lines: list[str], pattern: str, /) -> None:
 def assert_tui_line_count(lines: list[str], expected: int, /) -> None:
     """Assert that the TUI output has exactly *expected* lines."""
     __tracebackhide__ = True
-    assert len(lines) == expected, (
-        f"Expected {expected} lines of TUI output, got {len(lines)}"
-    )
+    assert len(lines) == expected, f"Expected {expected} lines of TUI output, got {len(lines)}"
 
 
 def assert_tui_line(lines: list[str], index: int, expected: str, /) -> None:
     """Assert that the line at *index* (0-based in *lines*) equals *expected*."""
     __tracebackhide__ = True
     if index < 0 or index >= len(lines):
-        raise AssertionError(
-            f"Line index {index} out of range for {len(lines)} lines"
-        )
+        raise AssertionError(f"Line index {index} out of range for {len(lines)} lines")
     assert lines[index] == expected, (
         f"Expected line {index} to be {expected!r}, got {lines[index]!r}"
     )

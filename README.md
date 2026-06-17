@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![CI](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-408%20passed%20(2%20skipped)-brightgreen.svg)](./.github/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-412%20passed%20(2%20skipped)-brightgreen.svg)](./.github/workflows/ci.yml)
 [![ruff](https://img.shields.io/badge/ruff-clean-000000.svg)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-clean-blue.svg)](https://mypy-lang.org)
 
@@ -228,9 +228,7 @@ See `docs/architecture.md`, `docs/benchmark-contract.md`, and `docs/mobile-tui.m
 
 - **No PyPI release or signed artifacts.** CI workflows for publish (`publish.yml`, supports both `PYPI_API_TOKEN` and OIDC Trusted Publishing — see `docs/publish.md`) and release with SBOM (`release.yml`) exist; no tag has produced a successful publish yet.
 - **Inspector hardening partial.** `inspect.py` validates schema and manifest checksums (via `manifest.verify()`); referential integrity and counter consistency checks remain pending.
-- **No cross-process run lock.** `storage.py` uses atomic writes (`os.replace`), but concurrent writers to the same output directory could race.
 - **No Windows testing.** Developed and tested on Linux only.
-- **No dependency lock file.** `requirements.txt` provides reproducible pins; no `requirements.lock` or `uv.lock` exists.
 - **`dist/` artifacts stale.** (Built 2026-06-11; source has changed since.) Not committed — `dist/` is gitignored.
 
 See [REMAINING_ISSUES.md](./REMAINING_ISSUES.md) for the full list of known limitations.
@@ -249,7 +247,7 @@ The [CHANGELOG](./CHANGELOG.md#known-issues-resolved-post-v010) lists issues res
 ruff check .                              # lint
 ruff format --check .                     # formatting
 mypy src/benchdeck/                       # type checking (strict; requires types-jsonschema in dev deps)
-pytest --cov=src/benchdeck --cov-report=term-missing  # 408 tests (2 skipped — live API only)
+pytest --cov=src/benchdeck --cov-report=term-missing  # 412 tests (2 skipped — live API only)
 ```
 
 Or use the Makefile:

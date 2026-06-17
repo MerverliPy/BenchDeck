@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import portalocker
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
@@ -33,12 +34,35 @@ def _json_default(obj: Any) -> Any:
 
 
 class ArtifactStore:
-    """Atomic JSON/text artifact writer safe for a concurrently watching TUI."""
+    """Atomic JSON/text artifact writer safe for a concurrently watching TUI.
 
-    def __init__(self, root: Path, manifest: Manifest | None = None) -> None:
+    Parameters
+    ----------
+    root:
+        Directory where artifacts are stored.
+    manifest:
+        Optional manifest tracker.
+    lock_path:
+        Optional path to a cross-process lock file. When set, every write
+        acquires an exclusive advisory lock (portalocker) so concurrent
+        writers cannot interleave. Readers are unaffected.
+    lock_timeout:
+        Seconds to wait for the lock before raising ``portalocker.LockException``.
+        Defaults to 5 seconds.
+    """
+
+    def __init__(
+        self,
+        root: Path,
+        manifest: Manifest | None = None,
+        lock_path: Path | None = None,
+        lock_timeout: float = 5.0,
+    ) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self._manifest: Manifest | None = manifest
+        self._lock_path: Path | None = lock_path
+        self._lock_timeout: float = lock_timeout
 
     def write_json(self, name: str, value: BaseModel | dict[str, Any] | list[Any]) -> Path:
         payload = _serialize(value)
@@ -64,6 +88,18 @@ class ArtifactStore:
         except (FileNotFoundError, json.JSONDecodeError):
             return default
 
+    def _write_with_lock(self, target: Path, content: str) -> None:
+        if self._lock_path is not None:
+            with portalocker.Lock(
+                self._lock_path,
+                mode="a",
+                timeout=self._lock_timeout,
+                flags=portalocker.LOCK_EX | portalocker.LOCK_NB,
+            ):
+                target.write_text(content, encoding="utf-8")
+        else:
+            target.write_text(content, encoding="utf-8")
+
     def _atomic_write(self, name: str, content: str) -> Path:
         target = self.root / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +109,16 @@ class ArtifactStore:
                 handle.write(content)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temp_name, target)
+            if self._lock_path is not None:
+                with portalocker.Lock(
+                    self._lock_path,
+                    mode="a",
+                    timeout=self._lock_timeout,
+                    flags=portalocker.LOCK_EX | portalocker.LOCK_NB,
+                ):
+                    os.replace(temp_name, target)
+            else:
+                os.replace(temp_name, target)
         finally:
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(temp_name)

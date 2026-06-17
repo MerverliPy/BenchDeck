@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added (2026-06-17 audit-remediation phase)
+
+- **Root `AGENTS.md`.** Repository-wide agent rules — smallest change, no unrelated modifications, no secret commits, run checks before completion, no unapproved push/merge/release/deploy, stop on conflict.
+- **`opencode.jsonc`.** Centralized OpenCode configuration with global agent defaults (model, temperature, max steps), all 5 custom tool registrations, and all 15 custom agent registrations with source paths. Agent-level permissions remain in `.md` frontmatter as the canonical per-agent config mechanism.
+- **`requirements.lock` and `requirements-dev.lock`.** Generated via `uv pip compile` for deterministic, reproducible dependency installs.
+- **`portalocker` dependency.** Added `portalocker>=2.10.0` for cross-process advisory locking.
+- **`storage.py` concurrent-writer protection.** `ArtifactStore` accepts an optional `lock_path` parameter; when set, every write acquires an exclusive `portalocker.Lock` with configurable timeout. 3 new tests in `tests/test_storage.py`.
+- **`docs/admin-verification.md`.** Checklist with `gh api` commands for verifying GitHub hosted settings: branch protection, CODEOWNERS enforcement, environment protection, Dependabot, secret scanning, tag protection, artifact attestation, and actions SHA pinning.
+
+### Changed
+
+- **`requirements.txt`.** Added `portalocker==3.2.0` pinned dependency.
+
+### Fixed
+
+- **Pre-existing lint issue.** Sorted imports in `tests/conftest.py` to satisfy `ruff I001`.
+
 ## 0.1.3 — 2026-06-16
 
 ### Added (Phase 3 — governance and configuration diagnostics)

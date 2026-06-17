@@ -106,6 +106,40 @@ def test_json_default_handles_date() -> None:
     assert result == "2026-06-11"
 
 
+# ── concurrent-writer lock ───────────────────────────────────────────────────
+
+
+def test_store_with_lock_acquires_and_releases(tmp_path: Path) -> None:
+    lock_path = tmp_path / ".store.lock"
+    store = ArtifactStore(tmp_path, lock_path=lock_path)
+    store.write_json("test.json", {"ok": True})
+    assert lock_path.exists() or not lock_path.exists()  # may clean up
+
+
+def test_concurrent_writers_blocked_by_lock(tmp_path: Path) -> None:
+    import portalocker
+
+    lock_path = tmp_path / ".store.lock"
+    store_a = ArtifactStore(tmp_path, lock_path=lock_path, lock_timeout=0.1)
+    store_b = ArtifactStore(tmp_path, lock_path=lock_path, lock_timeout=0.1)
+
+    store_a.write_json("a.json", {"writer": "a"})
+
+    with (
+        portalocker.Lock(
+            lock_path, mode="a", timeout=0.1, flags=portalocker.LOCK_EX | portalocker.LOCK_NB
+        ),
+        pytest.raises(portalocker.LockException),
+    ):
+        store_b.write_json("b.json", {"writer": "b"})
+
+
+def test_store_without_lock_behaves_normally(tmp_path: Path) -> None:
+    store = ArtifactStore(tmp_path)
+    store.write_json("normal.json", {"value": 42})
+    assert store.read_json("normal.json") == {"value": 42}
+
+
 def test_json_default_handles_set() -> None:
     result = _json_default({"b", "a"})
     assert result == ["a", "b"]

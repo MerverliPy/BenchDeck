@@ -238,6 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.headless:
             if args.watch:
                 import time as _time
+
                 try:
                     while True:
                         lines = BenchDeckTUI.render_headless(
