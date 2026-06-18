@@ -143,13 +143,13 @@ class TestRedaction:
         assert "sk-proj-" not in redacted
 
     def test_catches_sk_ant(self):
-        msg = "key: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxx"
+        msg = "key: sk-ant-api03-xxxxxxxxxxxxxxxxxxxxx"  # gitleaks:allow
         redacted = sandbox.redact(msg)
         assert "[REDACTED_API_KEY]" in redacted
         assert "sk-ant-" not in redacted
 
     def test_catches_sk_svcacct(self):
-        msg = "export OPENAI_API_KEY=sk-svcacct-abc123def45678901234567890"
+        msg = "export OPENAI_API_KEY=sk-svcacct-abc123def45678901234567890"  # gitleaks:allow
         redacted = sandbox.redact(msg)
         assert "[REDACTED_API_KEY]" in redacted
 

@@ -1,0 +1,6 @@
+# Exact BenchDeck validation commands for worldclass_repo_audit.sh
+# Format: name :: command
+pytest :: python -m pytest --cov=src/benchdeck --cov-report=term-missing
+ruff-check :: python -m ruff check .
+ruff-format :: python -m ruff format --check .
+mypy :: python -m mypy src/benchdeck/

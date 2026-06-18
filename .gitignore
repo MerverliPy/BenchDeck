@@ -19,4 +19,11 @@ my_agent.md
 .product-test/runtime/
 # Session output logs (not artifacts)
 logs/
-Testing /
+Testing/
+
+# Audit output
+.audit-output/
+
+# Local environment files
+.env.local
+.env.*.local

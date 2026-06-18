@@ -447,6 +447,76 @@ def test_schema_invalid_planner_json_preserves_raw_data() -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def test_runner_passes_stage_output_token_limits_to_default_gateways(
+    tmp_path: Path, agent_a_path: Path
+) -> None:
+    from benchdeck.budget import BudgetLimits
+    from benchdeck.openai_gateway import OpenAIGateway
+
+    runner = BenchmarkRunner(
+        agent_a_path=agent_a_path,
+        agent_b_path=None,
+        output_dir=tmp_path / "token_limits",
+        model="agent-model",
+        planner_model="planner-model",
+        judge_model="judge-model",
+        budget=BudgetLimits(
+            max_output_tokens_planner=101,
+            max_output_tokens_agent=202,
+            max_output_tokens_judge=303,
+        ),
+        api_key="test-key",
+    )
+
+    assert isinstance(runner.agent_gateway, OpenAIGateway)
+    assert runner.agent_gateway.config.max_output_tokens == 202
+    assert isinstance(runner.judge_gateway, OpenAIGateway)
+    assert runner.judge_gateway.config.max_output_tokens == 303
+
+
+def test_runner_passes_planner_output_token_limit_to_default_gateway(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, agent_a_path: Path
+) -> None:
+    from benchdeck.budget import BudgetLimits
+
+    captured_configs: list[GatewayConfig] = []
+
+    class RecordingGateway:
+        def __init__(self, config: GatewayConfig, *_args: object, **_kwargs: object) -> None:
+            self.config = config
+            captured_configs.append(config)
+
+        def generate_json(self, *, instructions: str, input_text: str) -> object:
+            gateway = FakeGateway([json_response(make_single_plan().model_dump(mode="json"))])
+            return gateway.generate_json(instructions=instructions, input_text=input_text)
+
+        def generate(self, *, instructions: str, input_text: str) -> object:
+            return FakeGateway([text_response("ok")]).generate(
+                instructions=instructions, input_text=input_text
+            )
+
+    monkeypatch.setattr("benchdeck.runner.OpenAIGateway", RecordingGateway)
+
+    runner = BenchmarkRunner(
+        agent_a_path=agent_a_path,
+        agent_b_path=None,
+        output_dir=tmp_path / "planner_limit",
+        model="agent-model",
+        planner_model="planner-model",
+        judge_model="judge-model",
+        budget=BudgetLimits(
+            max_output_tokens_planner=101,
+            max_output_tokens_agent=202,
+            max_output_tokens_judge=303,
+        ),
+        api_key="test-key",
+    )
+
+    runner._load_or_generate_plan("agent a", None)
+
+    assert [cfg.max_output_tokens for cfg in captured_configs] == [202, 303, 101]
+
+
 def test_gateway_config_explicit_max_retries() -> None:
     cfg = GatewayConfig(model="fake", max_retries=2, timeout_s=30.0)
     assert cfg.max_retries == 2

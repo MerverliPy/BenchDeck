@@ -116,13 +116,19 @@ class BenchmarkRunner:
         _planner_model = planner_model or model
         _gw_timeout = timeout if timeout is not None else 90.0
         _gw_retries = max_retries if max_retries is not None else 3
+        self.budget = BudgetTracker(limits=budget or BudgetLimits())
         self._planner_gateway_user = planner_gateway
         self._planner_model = _planner_model
         self._gw_timeout = _gw_timeout
         self._gw_retries = _gw_retries
         self._api_key = api_key
         self.agent_gateway = agent_gateway or OpenAIGateway(
-            GatewayConfig(model=model, timeout_s=_gw_timeout, max_retries=_gw_retries),
+            GatewayConfig(
+                model=model,
+                timeout_s=_gw_timeout,
+                max_retries=_gw_retries,
+                max_output_tokens=self.budget.limits.max_output_tokens_agent,
+            ),
             api_key=api_key,
         )
         self.judge_gateway = judge_gateway or OpenAIGateway(
@@ -130,6 +136,7 @@ class BenchmarkRunner:
                 model=judge_model,
                 timeout_s=_gw_timeout,
                 max_retries=_gw_retries,
+                max_output_tokens=self.budget.limits.max_output_tokens_judge,
                 use_structured_output=True,
                 json_schema=JUDGE_OUTPUT_SCHEMA,
             ),
@@ -137,7 +144,6 @@ class BenchmarkRunner:
         )
         self._shutdown = False
         self.num_judges = max(1, num_judges)
-        self.budget = BudgetTracker(limits=budget or BudgetLimits())
         self.metadata = RunMetadata(
             config={
                 "agent_a": str(agent_a_path),
@@ -605,6 +611,7 @@ class BenchmarkRunner:
                     model=self._planner_model,
                     timeout_s=self._gw_timeout,
                     max_retries=self._gw_retries,
+                    max_output_tokens=self.budget.limits.max_output_tokens_planner,
                     use_structured_output=True,
                     json_schema=PLANNER_OUTPUT_SCHEMA,
                 ),

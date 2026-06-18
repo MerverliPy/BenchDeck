@@ -64,6 +64,7 @@ target-version = "py311"
 # gates stay focused on src/ and tests/. Same rationale as the existing
 # per-file-ignores for scripts/generate_demo_screens.py below.
 extend-exclude = [
+    ".audit-output",
     ".opencode",
     ".product-test",
 ]
