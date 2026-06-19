@@ -196,6 +196,27 @@ def test_main_print_help() -> None:
     assert exc_info.value.code == 0
 
 
+def test_main_print_version(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+    assert exc_info.value.code == 0
+
+    captured = capsys.readouterr()
+    assert captured.out.startswith("benchdeck ")
+    assert captured.err == ""
+
+
+def test_python_m_benchdeck_version() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "benchdeck", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout.startswith("benchdeck ")
+    assert result.stderr == ""
+
+
 def test_python_m_benchdeck_help() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "benchdeck", "--help"],
