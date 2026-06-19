@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .config import load_config
 from .inspect import inspect_run
 from .models import RunStatus
@@ -19,6 +20,12 @@ logger = logging.getLogger("benchdeck")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="benchdeck", description="Agent benchmark harness and TUI"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Print the BenchDeck version and exit",
     )
     parser.add_argument(
         "--config",
