@@ -17,7 +17,7 @@ These skills adapt the taste-skill pattern to BenchDeck's actual constraints:
 | `benchdeck-terminal-taste` | TUI layout, hierarchy, legibility, and narrow-width polish | `tui-precision-editor` |
 | `benchdeck-screenshot-quality` | Screenshot candidate quality, README/demo visual evidence, artifact validation language | `tui-screenshot` |
 | `benchdeck-readme-polish` | README and docs positioning, screenshot captions, product-story clarity | `repository-docs` |
-| `benchdeck-output-completeness` | Complete plans, handoffs, docs, and bounded code outputs without placeholder shortcuts | `tui-precision-editor`, `repository-docs`, `repo-auditor` |
+| `benchdeck-output-completeness` | Complete plans, handoffs, docs, and bounded code outputs without placeholder shortcuts | `tui-precision-editor`, `tui-screenshot`, `repository-docs` |
 
 ## Usage policy
 
