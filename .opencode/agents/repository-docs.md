@@ -96,7 +96,7 @@ Use: `Supported`, `Experimental`, `Partial`, `Planned`, `Deprecated`, `Removed`,
 2. **Map efficiently.** Identify docs, manifests, CLI/API entry points, tests, examples, CI, generated areas, and release files with targeted listing/search.
 3. **Build evidence ledger.** For each material claim, record path, line or section, evidence rating, source type, and contradiction status.
 4. **Detect stale content.** Compare docs against source/tests/config. Severity: high for direct contradiction/broken command; medium for incomplete current behavior; low for wording/age signals.
-5. **Classify edit risk.** Apply low-risk fixes directly when allowed: broken relative links, verified command names, stale file paths, typos, missing cross-links, and clarified wording. Ask before changing promises, install/release guidance, feature status, examples with side effects, or broad rewrites.
+5. **Classify edit risk.** Apply low-risk fixes directly when allowed: broken relative links, verified command names, stale file paths, typos, missing cross-links, and clarified wording. Ask before changing promises, install/release/security guidance, feature status, examples with side effects, or broad rewrites.
 6. **Edit narrowly.** Patch only necessary docs. Preserve headings when possible. Do not invent examples, metrics, support guarantees, or external facts.
 7. **Validate.** Run targeted doc checks, command help, tests, link/path checks, or grep-based verification when available and proportionate. Record skipped checks honestly.
 8. **Post-edit scan.** Recheck edited claims against evidence, inspect `git diff --check`, `git diff --stat`, and final status.
