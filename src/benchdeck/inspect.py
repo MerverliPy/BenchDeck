@@ -88,6 +88,9 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
     if metadata.get("status") == "completed" and (snapshot.policy_blocks or judged < planned):
         warnings.append("Run is marked completed despite blocked or missing required coverage.")
 
+    warnings.extend(_referential_integrity_warnings(snapshot))
+    warnings.extend(_counter_consistency_warnings(snapshot))
+
     # JSON Schema validation of per-agent tallies
     tally_schema = _load_schema("summary_tally.schema.json")
     if tally_schema and isinstance(tally, dict):
@@ -152,3 +155,139 @@ def inspect_run(run_dir: Path) -> dict[str, Any]:
         "planner_error": bool(pc.get("terminal_error") or pc.get("parse_error")),
         "warnings": warnings,
     }
+
+
+def _referential_integrity_warnings(snapshot: Any) -> list[str]:
+    warnings: list[str] = []
+    plan_case_ids = _plan_case_ids(snapshot.plan)
+    if not plan_case_ids:
+        return warnings
+
+    seen_results: set[tuple[str, int]] = set()
+    for agent_label, results in snapshot.results.items():
+        if not isinstance(results, list):
+            continue
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            case_id = _int_or_none(result.get("case_id"))
+            if case_id is None:
+                warnings.append(f"Result for {agent_label} lacks an integer case_id.")
+                continue
+            key = (agent_label, case_id)
+            if key in seen_results:
+                warnings.append(f"Duplicate result for {agent_label} case {case_id}.")
+            seen_results.add(key)
+            if case_id not in plan_case_ids:
+                warnings.append(
+                    f"Result for {agent_label} case {case_id} references a case not in the plan."
+                )
+
+    seen_judgments: set[tuple[str, int]] = set()
+    for judgment in snapshot.judgments:
+        if not isinstance(judgment, dict):
+            continue
+        agent_label = str(judgment.get("agent_label") or "")
+        case_id = _int_or_none(judgment.get("case_id"))
+        if case_id is None:
+            warnings.append("Judgment lacks an integer case_id.")
+            continue
+        if case_id not in plan_case_ids:
+            warnings.append(f"Judgment for case {case_id} references a case not in the plan.")
+        if agent_label:
+            key = (agent_label, case_id)
+            if key in seen_judgments:
+                warnings.append(f"Duplicate judgment for {agent_label} case {case_id}.")
+            seen_judgments.add(key)
+
+    for artifact_name, artifacts in (
+        ("Policy block", snapshot.policy_blocks),
+        ("Infrastructure error", snapshot.infrastructure_errors),
+    ):
+        for item in artifacts:
+            if not isinstance(item, dict):
+                continue
+            case_id = _int_or_none(item.get("case_id"))
+            if case_id is None:
+                warnings.append(f"{artifact_name} lacks an integer case_id.")
+            elif case_id not in plan_case_ids:
+                warnings.append(
+                    f"{artifact_name} for case {case_id} references a case not in the plan."
+                )
+
+    return warnings
+
+
+def _counter_consistency_warnings(snapshot: Any) -> list[str]:
+    warnings: list[str] = []
+    metadata = snapshot.metadata
+    if not isinstance(metadata, dict):
+        return warnings
+
+    plan_case_ids = _plan_case_ids(snapshot.plan)
+    agents_in_run = _int_or_none(metadata.get("agents_in_run"))
+    if plan_case_ids and agents_in_run:
+        expected_planned = len(plan_case_ids) * agents_in_run
+        recorded_planned = _int_or_none(metadata.get("executions_planned"))
+        if recorded_planned is not None and recorded_planned != expected_planned:
+            warnings.append(
+                "Metadata executions_planned is inconsistent with plan cases × agents "
+                f"({recorded_planned} != {expected_planned})."
+            )
+
+    _append_count_warning(
+        warnings,
+        metadata,
+        field="executions_judged",
+        actual=len(snapshot.judgments),
+        label="judgment artifact count",
+    )
+    _append_count_warning(
+        warnings,
+        metadata,
+        field="policy_blocks",
+        actual=len(snapshot.policy_blocks),
+        label="policy block artifact count",
+    )
+    _append_count_warning(
+        warnings,
+        metadata,
+        field="infrastructure_failures",
+        actual=len(snapshot.infrastructure_errors),
+        label="infrastructure error artifact count",
+    )
+    return warnings
+
+
+def _append_count_warning(
+    warnings: list[str],
+    metadata: dict[str, Any],
+    *,
+    field: str,
+    actual: int,
+    label: str,
+) -> None:
+    recorded = _int_or_none(metadata.get(field))
+    if recorded is not None and recorded != actual:
+        warnings.append(f"Metadata {field} is inconsistent with {label} ({recorded} != {actual}).")
+
+
+def _plan_case_ids(plan: dict[str, Any]) -> set[int]:
+    cases = plan.get("cases") if isinstance(plan, dict) else None
+    if not isinstance(cases, list):
+        return set()
+    ids: set[int] = set()
+    for case in cases:
+        if isinstance(case, dict):
+            case_id = _int_or_none(case.get("id"))
+            if case_id is not None:
+                ids.add(case_id)
+    return ids
+
+
+def _int_or_none(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None

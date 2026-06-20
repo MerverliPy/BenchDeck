@@ -276,3 +276,83 @@ def test_original_run_zip_still_loads_clean_strict() -> None:
     assert report["planned_cases"] == 8
     assert report["judged_cases"] == 8
     assert len(report["warnings"]) == 0
+
+
+def test_inspect_warns_on_result_case_not_in_plan(monkeypatch: Any) -> None:
+    snapshot = Snapshot(
+        metadata={"cases_in_plan": 1, "executions_judged": 0},
+        plan={"cases": [{"id": 1}]},
+        results={"agent_a": [{"case_id": 99, "final_output": "unexpected"}]},
+    )
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
+    report = inspect_run(Path("/tmp/fake"))
+    warnings = [w for w in report["warnings"] if "references a case not in the plan" in w]
+    assert warnings == ["Result for agent_a case 99 references a case not in the plan."]
+
+
+def test_inspect_warns_on_judgment_case_not_in_plan(monkeypatch: Any) -> None:
+    snapshot = Snapshot(
+        metadata={"cases_in_plan": 1, "executions_judged": 1},
+        plan={"cases": [{"id": 1}]},
+        judgments=[{"case_id": 42, "agent_label": "agent_a", "overall_rating": "Strong"}],
+    )
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
+    report = inspect_run(Path("/tmp/fake"))
+    warnings = [w for w in report["warnings"] if "Judgment for case 42" in w]
+    assert warnings == ["Judgment for case 42 references a case not in the plan."]
+
+
+def test_inspect_warns_on_duplicate_execution_artifacts(monkeypatch: Any) -> None:
+    snapshot = Snapshot(
+        metadata={"cases_in_plan": 1, "executions_judged": 2},
+        plan={"cases": [{"id": 1}]},
+        results={
+            "agent_a": [
+                {"case_id": 1, "final_output": "one"},
+                {"case_id": 1, "final_output": "two"},
+            ]
+        },
+        judgments=[
+            {"case_id": 1, "agent_label": "agent_a", "overall_rating": "Strong"},
+            {"case_id": 1, "agent_label": "agent_a", "overall_rating": "Weak"},
+        ],
+    )
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
+    report = inspect_run(Path("/tmp/fake"))
+    assert "Duplicate result for agent_a case 1." in report["warnings"]
+    assert "Duplicate judgment for agent_a case 1." in report["warnings"]
+
+
+def test_inspect_warns_on_metadata_counter_mismatch(monkeypatch: Any) -> None:
+    snapshot = Snapshot(
+        metadata={
+            "cases_in_plan": 2,
+            "agents_in_run": 2,
+            "executions_planned": 3,
+            "executions_judged": 5,
+            "policy_blocks": 2,
+            "infrastructure_failures": 1,
+        },
+        plan={"cases": [{"id": 1}, {"id": 2}]},
+        judgments=[{"case_id": 1, "agent_label": "agent_a", "overall_rating": "Strong"}],
+        policy_blocks=[{"case_id": 2}],
+        infrastructure_errors=[],
+    )
+    monkeypatch.setattr("benchdeck.inspect.load_snapshot", lambda d, strict=False: snapshot)
+    report = inspect_run(Path("/tmp/fake"))
+    assert (
+        "Metadata executions_planned is inconsistent with plan cases × agents (3 != 4)."
+        in report["warnings"]
+    )
+    assert (
+        "Metadata executions_judged is inconsistent with judgment artifact count (5 != 1)."
+        in report["warnings"]
+    )
+    assert (
+        "Metadata policy_blocks is inconsistent with policy block artifact count (2 != 1)."
+        in report["warnings"]
+    )
+    assert (
+        "Metadata infrastructure_failures is inconsistent with infrastructure error artifact count "
+        "(1 != 0)." in report["warnings"]
+    )
