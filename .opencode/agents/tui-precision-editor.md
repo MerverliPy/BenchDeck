@@ -45,7 +45,10 @@ permission:
   task:
     "*": deny
     "tui-screenshot": ask
-  skill: deny
+  skill:
+    "*": deny
+    "benchdeck-terminal-taste": allow
+    "benchdeck-output-completeness": allow
   webfetch: ask
   websearch: ask
   external_directory: deny

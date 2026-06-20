@@ -28,7 +28,10 @@ permission:
   lsp: allow
   question: allow
   task: deny
-  skill: deny
+  skill:
+    "*": deny
+    "benchdeck-screenshot-quality": allow
+    "benchdeck-output-completeness": allow
   webfetch: deny
   websearch: deny
   external_directory: deny
