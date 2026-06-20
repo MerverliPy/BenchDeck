@@ -3,7 +3,10 @@
 - Make the smallest change that satisfies the issue.
 - Do not modify unrelated files.
 - Do not include credentials, tokens, private keys, or generated artifacts in repository edits.
-- Run repository-defined checks before reporting completion.
+- Run repository-defined checks before reporting completion:
+  ```bash
+  ruff check . && ruff format --check . && python -m mypy --no-incremental src/benchdeck && python -m pytest -q
+  ```
 - Do not perform Git history, release, or deployment actions without explicit approval.
 - Stop when requirements conflict or destructive action is required.
 - Use @repository-docs for documentation changes.

@@ -65,4 +65,5 @@ def analyze_disagreement(
         "high_disagreement_cases": high_disagreement,
         "overall_agreement": overall_agreement_summary,
         "total_judgments": len(judgments),
+        "rating_distributions": {k: dict(v) for k, v in rating_distributions.items()},
     }

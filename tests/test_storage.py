@@ -148,3 +148,45 @@ def test_json_default_handles_set() -> None:
 def test_json_default_raises_on_unhandled() -> None:
     with pytest.raises(TypeError, match="is not JSON serializable"):
         _json_default(complex(1, 2))
+
+
+# ── concurrent reader safety ──────────────────────────────────────────────────
+
+
+def test_concurrent_write_and_manifest_read(tmp_path: Path) -> None:
+    """Multiple concurrent writers using portalocker do not corrupt manifest
+    entries. A reader loading the manifest while a writer is active sees a
+    consistent snapshot of the last complete generation."""
+    import threading
+
+    from benchdeck.manifest import Manifest
+
+    lock_path = tmp_path / ".store.lock"
+    store = ArtifactStore(tmp_path, lock_path=lock_path, lock_timeout=2.0)
+
+    errors: list[Exception] = []
+
+    def writer(count: int) -> None:
+        try:
+            for i in range(count):
+                store.write_json(f"w{count}_{i}.json", {"n": i, "writer": count})
+        except Exception as exc:
+            errors.append(exc)
+
+    t1 = threading.Thread(target=writer, args=(10,))
+    t2 = threading.Thread(target=writer, args=(10,))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert not errors, f"Writer errors: {errors}"
+
+    manifest = Manifest.load(tmp_path)
+    for name, entry in manifest._entries.items():
+        path = tmp_path / name
+        assert path.exists(), f"Manifest entry {name} missing on disk"
+        import hashlib
+
+        actual_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert actual_sha == entry.sha256, f"Checksum mismatch for {name}"

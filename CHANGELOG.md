@@ -5,7 +5,7 @@
 ### Added (2026-06-17 audit-remediation phase)
 
 - **Root `AGENTS.md`.** Repository-wide agent rules — smallest change, no unrelated modifications, no secret commits, run checks before completion, no unapproved push/merge/release/deploy, stop on conflict.
-- **`opencode.jsonc`.** Centralized OpenCode configuration with global agent defaults (model, temperature, max steps), all 5 custom tool registrations, and all 15 custom agent registrations with source paths. Agent-level permissions remain in `.md` frontmatter as the canonical per-agent config mechanism.
+- **`opencode.jsonc`.** Centralized OpenCode configuration file for per-project agent, skill, tool, and permission registration. Agent-level permissions remain in `.md` frontmatter as the canonical per-agent config mechanism.
 - **`requirements.lock` and `requirements-dev.lock`.** Generated via `uv pip compile` for deterministic, reproducible dependency installs.
 - **`portalocker` dependency.** Added `portalocker>=2.10.0` for cross-process advisory locking.
 - **`storage.py` concurrent-writer protection.** `ArtifactStore` accepts an optional `lock_path` parameter; when set, every write acquires an exclusive `portalocker.Lock` with configurable timeout. 3 new tests in `tests/test_storage.py`.

@@ -31,6 +31,13 @@ class BenchDeckTUI:
         3: ["h/l tabs", "q quit"],
     }
 
+    FOOTER_HINTS_NARROW: dict[int, str] = {
+        0: "h/l tabs · j/k scroll · n run · q quit",
+        1: "Enter open · e export · j/k move · q quit",
+        2: "j/k scroll · h/l tabs · r reload · q quit",
+        3: "h/l tabs · q quit",
+    }
+
     def __init__(
         self,
         run_dir: Path,
@@ -270,10 +277,9 @@ class BenchDeckTUI:
             status = self._status_msg
             if not status:
                 if width < 56:
+                    status = self.FOOTER_HINTS_NARROW.get(self.tab, self.FOOTER_HINTS_NARROW[0])
                     if self.tab == 1 and self.enable_case_filter:
-                        status = "1-4 tabs · j/k move · f filter · q quit"
-                    else:
-                        status = "1-4 tabs · j/k move · q quit"
+                        status = "Enter · e export · f filter · s sort · q quit"
                 else:
                     hints = self.FOOTER_HINTS.get(self.tab, self.FOOTER_HINTS[0])
                     if self.tab == 1 and self.enable_case_filter:
@@ -778,6 +784,9 @@ class BenchDeckTUI:
         if self._proc is not None:
             self._status_msg = "A run is already in progress"
             return
+        if self._stderr_handle:
+            self._stderr_handle.close()
+            self._stderr_handle = None
         base_dir = self.run_dir
         if base_dir.is_file():
             base_dir = base_dir.parent

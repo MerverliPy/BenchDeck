@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![CI](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/MerverliPy/BenchDeck/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-476%20passed%20(9%20skipped)-brightgreen.svg)](./.github/workflows/ci.yml) <!-- badge count is a snapshot; run `pytest` for current -->
+[![tests](https://img.shields.io/badge/tests-576%20passed%20(11%20skipped)-brightgreen.svg)](./.github/workflows/ci.yml) <!-- badge count is a snapshot; run `pytest` for current -->
 [![ruff](https://img.shields.io/badge/ruff-clean-000000.svg)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-clean-blue.svg)](https://mypy-lang.org)
 
@@ -16,21 +16,25 @@ BenchDeck turns one or two Markdown agent files into a benchmark plan, runs isol
 
 ## Screenshots
 
-<img src="assets/screenshots/overview.png" alt="Overview screen" width="720">
+*32-column minimum proof — terminal-fit legibility at the documented 32×10 boundary:*
 
-*Overview — progress bar, rating distribution, per-family scores, policy blocks, token usage*
+<img src="assets/screenshots/overview-w32.png" alt="Overview 32-col" width="320">
+<img src="assets/screenshots/cases-w32.png" alt="Cases 32-col" width="320">
 
-<img src="assets/screenshots/cases.png" alt="Case list" width="720">
+*80-column standard proof — full context with per-family scores, ratings, and controls visible:*
 
-*Case list — per-agent ratings, blocked cases, pending items, status marks*
+<img src="assets/screenshots/overview.png" alt="Overview 80-col" width="740">
+<img src="assets/screenshots/cases.png" alt="Cases 80-col" width="740">
 
-<img src="assets/screenshots/detail.png" alt="Case detail" width="720">
+*32-col and 80-col proof that detail view is usable on mobile SSH and desktop alike:*
 
-*Case detail — purpose, judgment, gate check, agent output*
+<img src="assets/screenshots/detail-w32.png" alt="Detail 32-col" width="320">
+<img src="assets/screenshots/detail.png" alt="Detail 80-col" width="740">
 
-<img src="assets/screenshots/help.png" alt="Help screen" width="720">
+*32-col and 80-col proof that help text is readable (scrollable) at minimum dimensions:*
 
-*Help — phone-keyboard-friendly controls*
+<img src="assets/screenshots/help-w32.png" alt="Help 32-col" width="320">
+<img src="assets/screenshots/help.png" alt="Help 80-col" width="740">
 
 *Captured from a live benchmark run (`gpt-4o-mini`, 8 cases, repository-integrity-agent). Regenerate with `scripts/generate_demo_screens.py --run-dir benchmark_out/<run_id>`.*
 
@@ -52,7 +56,7 @@ A live benchmark of the included `repository-integrity-agent` against `gpt-4o-mi
 | Wall-clock time | ~2 min 20 s |
 | Status | `completed_with_failures` |
 
-Run: `benchdeck run --agent-a examples/repository-integrity-agent.md --model gpt-4o-mini --judge-model gpt-4o-mini -o benchmark_out`
+Run: `benchdeck run --agent-a examples/repository-integrity-agent.md --model gpt-4o-mini --judge-model gpt-4o-mini --output-dir benchmark_out`
 
 ---
 
@@ -78,7 +82,7 @@ Benchmarks are prone to silent ambiguity. BenchDeck makes state explicit:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .                    # user install (pip install -e '.[dev]' for development)
+pip install -e .                    # editable install (pip install -e '.[dev]' for development)
 export OPENAI_API_KEY='sk-...'      # required — the run command checks this
 ```
 
@@ -210,7 +214,7 @@ from benchdeck.loader import load_snapshot
 plan = load_snapshot(Path('fixtures/original_run.zip')).plan
 Path('/tmp/benchmark_plan.json').write_text(json.dumps(plan, indent=2) + '\n')
 PY
-benchdeck run --agent-a examples/repository-integrity-agent.md --plan /tmp/benchmark_plan.json -o benchmark_out
+benchdeck run --agent-a examples/repository-integrity-agent.md --plan /tmp/benchmark_plan.json --output-dir benchmark_out
 ```
 
 ---
@@ -266,7 +270,7 @@ The [CHANGELOG](./CHANGELOG.md#known-issues-resolved-post-v010) lists issues res
 ruff check .                              # lint
 ruff format --check .                     # formatting
 mypy src/benchdeck/                       # type checking (strict; requires types-jsonschema in dev deps)
-pytest --cov=src/benchdeck --cov-report=term-missing  # 476 passed, 9 skipped (2 xpassed)
+pytest --cov=src/benchdeck --cov-report=term-missing  # 576 passed, 11 skipped
 ```
 
 Or use the Makefile:

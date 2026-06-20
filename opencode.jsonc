@@ -1,3 +1,50 @@
 {
-  "$schema": "https://opencode.ai/config.json"
+  "$schema": "https://opencode.ai/config.json",
+  "agents": {
+    "repository-docs": {
+      "description": "Audits and maintains repository documentation from verified repository evidence",
+      "source": "builtin",
+      "tools": ["read", "write", "edit", "glob", "grep", "bash"]
+    },
+    "repo-auditor": {
+      "description": "Audits BenchDeck with bounded evidence and writes only AGENT_HANDOFF.md",
+      "source": "builtin",
+      "tools": ["read", "glob", "grep", "bash"]
+    }
+  },
+  "skills": {
+    "repository-docs-analysis": {
+      "path": ".opencode/skills/repository-docs-analysis/SKILL.md"
+    },
+    "repository-docs-update": {
+      "path": ".opencode/skills/repository-docs-update/SKILL.md"
+    },
+    "repository-docs-validation": {
+      "path": ".opencode/skills/repository-docs-validation/SKILL.md"
+    },
+    "benchdeck-feature-map": {
+      "path": ".opencode/skills/benchdeck-feature-map/SKILL.md"
+    },
+    "benchdeck-terminal-taste": {
+      "path": ".opencode/skills/benchdeck-terminal-taste/SKILL.md"
+    },
+    "benchdeck-screenshot-quality": {
+      "path": ".opencode/skills/benchdeck-screenshot-quality/SKILL.md"
+    },
+    "benchdeck-readme-polish": {
+      "path": ".opencode/skills/benchdeck-readme-polish/SKILL.md"
+    },
+    "benchdeck-output-completeness": {
+      "path": ".opencode/skills/benchdeck-output-completeness/SKILL.md"
+    },
+    "tui-pty-validation": {
+      "path": ".opencode/skills/tui-pty-validation/SKILL.md"
+    },
+    "product-test-evidence": {
+      "path": ".opencode/skills/product-test-evidence/SKILL.md"
+    },
+    "no-mock-live-validation": {
+      "path": ".opencode/skills/no-mock-live-validation/SKILL.md"
+    }
+  }
 }

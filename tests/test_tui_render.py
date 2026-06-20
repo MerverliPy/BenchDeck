@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from benchdeck.loader import Snapshot
+from benchdeck.loader import Snapshot, load_snapshot
 from benchdeck.manifest import Manifest
 from benchdeck.tui import BenchDeckTUI
 
@@ -1128,6 +1128,26 @@ def test_poll_subprocess_noop_when_proc_is_none(tmp_path: Path) -> None:
     assert tui._status_msg == "prior status"
 
 
+def test_poll_subprocess_still_running_no_change(tmp_path: Path) -> None:
+    """When poll() returns None (process still running), no state is cleared
+    and the status message is not overwritten."""
+    agent_path = tmp_path / "agent.md"
+    agent_path.write_text("# test")
+    tui = BenchDeckTUI(tmp_path, agent_a_path=agent_path, model="gpt-4o")
+    with _mock_popen():
+        tui._launch_run()
+    assert tui._proc is not None
+    tui._status_msg = "Launched PID 12345 → ..."
+    # poll() already returns None from _mock_popen via MagicMock
+
+    tui._poll_subprocess()
+
+    # Still-running: proc remains, status message unchanged.
+    assert tui._proc is not None
+    assert "Launched PID" in tui._status_msg
+    assert tui._stderr_handle is not None
+
+
 # ── _launch_run with agent_b (P0-7) ─────────────────────────────────────────
 
 
@@ -1186,22 +1206,19 @@ def test_launch_run_omits_agent_b_when_file_missing(tmp_path: Path) -> None:
 
 
 def test_footer_hint_short_form_at_narrow_width(make_fake_stdscr: Any) -> None:
-    """At width < 56, the footer (row height-1) uses the short hint
-    `1-4 tabs · j/k move · q quit` so it fits within the 32-56 column
-    band. The full-form tokens must NOT appear."""
+    """At width < 56, the footer (row height-1) uses tab-contextual
+    short hints from FOOTER_HINTS_NARROW so the footer fits within the
+    32-56 column band. The generic `1-4 tabs` form must NOT appear."""
     tui = _make_tui(snapshot=Snapshot(metadata={"status": "running"}))
     stdscr = make_fake_stdscr(24, 40)
     tui._draw(stdscr)
     footer_calls = [c for c in stdscr.calls if c[0] == 23]
     assert len(footer_calls) == 1
     _r, _c, text, _n, _a = footer_calls[0]
-    assert "1-4 tabs" in text
-    assert "j/k move" in text
     assert "q quit" in text
-    # Full-form tokens must be absent.
-    assert "Enter detail" not in text
-    assert "e export" not in text
-    assert "h/l tabs" not in text
+    assert "h/l tabs" in text or "j/k" in text
+    # The generic `1-4 tabs` form is replaced by contextual hints.
+    assert "1-4 tabs" not in text
 
 
 def test_footer_hint_full_form_at_wide_width(make_fake_stdscr: Any) -> None:
@@ -2104,3 +2121,271 @@ def test_init_colors_default_auto_preserves_current_palette(
     # All 6 pairs are initialized.
     pair_ids = sorted(c[0][0] for c in mock_init_pair.call_args_list)
     assert pair_ids == [1, 2, 3, 4, 5, 6]
+
+
+# ── _safe_add boundary tests ──────────────────────────────────────────────────
+
+
+def test_safe_add_clips_text_at_window_edge() -> None:
+    """_safe_add passes max(0, width - col - 1) as the character limit,
+    preventing curses from raising an error when the text extends past
+    the right edge of the terminal."""
+    from unittest.mock import MagicMock
+
+    stdscr = MagicMock()
+    # Text longer than remaining space: row 0 col 75, width 80 → n = max(0, 80-75-1) = 4
+    BenchDeckTUI._safe_add(stdscr, 0, 75, "this is long text", 80)
+    stdscr.addnstr.assert_called_once_with(0, 75, "this is long text", 4, 0)
+
+
+def test_safe_add_col_at_width_edge_produces_zero_limit() -> None:
+    """When col >= width-1, n becomes 0 (or negative, clamped to 0).
+    _safe_add suppresses the curses error that would result."""
+    from unittest.mock import MagicMock
+
+    stdscr = MagicMock()
+    # col 79, width 80 → n = max(0, 80-79-1) = 0
+    BenchDeckTUI._safe_add(stdscr, 0, 79, "x", 80)
+    stdscr.addnstr.assert_called_once_with(0, 79, "x", 0, 0)
+
+
+def test_safe_add_zero_width_passes_zero_n() -> None:
+    """When width is 0, n is clamped to 0."""
+    from unittest.mock import MagicMock
+
+    stdscr = MagicMock()
+    BenchDeckTUI._safe_add(stdscr, 0, 0, "text", 0)
+    stdscr.addnstr.assert_called_once_with(0, 0, "text", 0, 0)
+
+
+# ── _draw at exact minimum boundary (gap 3) ──────────────────────────────────
+
+
+def test_draw_at_exact_minimum_dimensions(make_fake_stdscr: Any) -> None:
+    """At exactly 32×10 the `_draw` method does NOT emit the
+    'Terminal too small' message (the guard is ``height < 10 or
+    width < 32``, so exactly-equal passes through) and renders a
+    title row (0), tab row (1), and footer row (9)."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(
+            metadata={"status": "running", "cases_in_plan": 1, "token_usage": {}},
+            plan={"cases": [{"id": 1, "title": "Case", "family": "happy_path"}]},
+        ),
+    )
+    stdscr = make_fake_stdscr(10, 32)
+    tui._draw(stdscr)
+    all_texts = [c[2] for c in stdscr.calls]
+    assert not any("Terminal too small" in t for t in all_texts)
+    rows_used = {r for (r, _c, _t, _n, _a) in stdscr.calls}
+    assert 0 in rows_used, "title row missing"
+    assert 1 in rows_used, "tab row missing"
+    assert 9 in rows_used, "footer row missing"
+
+
+# ── tab content at absolute minimum width (gap 4) ────────────────────────────
+
+
+def test_overview_renders_at_minimum_width() -> None:
+    """`_overview(32)` produces content including core sections
+    (Run:, Progress, etc.). Width-based truncation is performed by
+    `_safe_add` during `_draw`, so raw `_overview` lines may
+    exceed 32 columns."""
+    tui = _make_tui(
+        snapshot=Snapshot(
+            metadata={
+                "cases_in_plan": 8,
+                "executions_judged": 4,
+                "policy_blocks": 0,
+                "infrastructure_failures": 0,
+                "token_usage": {"requests": 1, "total_tokens": 100},
+            },
+            tally={},
+        ),
+    )
+    lines = tui._overview(32)
+    assert lines
+    assert any(line.startswith("Run:") for line in lines)
+    assert any("Progress [" in line for line in lines)
+
+
+def test_help_renders_at_minimum_width() -> None:
+    """`_help(32)` produces all expected control reference text even
+    at the narrowest viewport argument."""
+    tui = _make_tui()
+    lines = tui._help(32)
+    assert lines
+    joined = "\n".join(lines)
+    assert "1-4" in joined
+    assert "h / l" in joined
+    assert "q / Esc" in joined
+
+
+def test_detail_renders_at_minimum_width() -> None:
+    """`_detail(32)` with a case and a judgment fits within 32 columns
+    and includes the case title and rating."""
+    tui = _make_tui(
+        selected=0,
+        snapshot=Snapshot(
+            plan={
+                "cases": [
+                    {
+                        "id": 1,
+                        "title": "Short case",
+                        "family": "happy_path",
+                        "purpose": "purpose text",
+                    }
+                ]
+            },
+            judgments=[
+                {
+                    "case_id": 1,
+                    "agent_label": "agent_a",
+                    "overall_rating": "Strong",
+                    "why": "ok",
+                    "gate_check": {"status": "Pass", "reason": "ok"},
+                }
+            ],
+        ),
+    )
+    lines = tui._detail(32)
+    assert lines
+    assert all(len(line) <= 32 for line in lines)
+    joined = "\n".join(lines)
+    assert "Short case" in joined
+    assert "Strong" in joined
+
+
+# ── footer status line when _status_msg is set vs. cleared (gap 8) ───────────
+
+
+def test_draw_footer_shows_status_msg_when_set(make_fake_stdscr: Any) -> None:
+    """When `_status_msg` is non-empty the footer row shows that
+    message instead of the default hint text."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
+    tui._status_msg = "Custom status message here"
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    assert text == "Custom status message here"
+    assert " | " not in text
+    assert "h/l tabs" not in text
+
+
+def test_draw_footer_shows_hints_when_status_cleared(make_fake_stdscr: Any) -> None:
+    """When `_status_msg` is empty the footer falls back to the
+    per-tab hint text (wide form at 80 cols)."""
+    tui = _make_tui(
+        tab=0,
+        snapshot=Snapshot(metadata={"status": "running"}),
+    )
+    tui._status_msg = ""
+    stdscr = make_fake_stdscr(24, 80)
+    tui._draw(stdscr)
+    footer_calls = [c for c in stdscr.calls if c[0] == 23]
+    assert len(footer_calls) == 1
+    _r, _c, text, _n, _a = footer_calls[0]
+    assert " | " in text
+    assert "h/l tabs" in text
+    assert "q quit" in text
+
+
+# ── _export_case judgments present but no result (gap 12) ────────────────────
+
+
+def test_export_case_judgments_present_no_result(tmp_path: Path) -> None:
+    """When a case has judgments but its results dict is empty (no
+    agent output recorded), the exported Markdown includes the
+    Judgment sections but omits the Agent Output section entirely.
+    The export still succeeds with a status message."""
+    tui = BenchDeckTUI(tmp_path)
+    tui.snapshot = Snapshot(
+        plan={
+            "cases": [
+                {
+                    "id": 1,
+                    "title": "Judged But No Output",
+                    "family": "happy_path",
+                    "purpose": "test",
+                    "test_prompt": "do the thing",
+                }
+            ]
+        },
+        judgments=[
+            {
+                "case_id": 1,
+                "agent_label": "agent_a",
+                "overall_rating": "Strong",
+                "why": "looks correct",
+                "gate_check": {"status": "Pass", "reason": "all checks passed"},
+            }
+        ],
+        results={},
+    )
+    tui.selected = 0
+    tui._export_case()
+    assert tui._status_msg != ""
+    assert "Exported" in tui._status_msg
+    exported = list(tmp_path.glob("case_*.md"))
+    assert len(exported) == 1
+    content = exported[0].read_text(encoding="utf-8")
+    assert "Judged But No Output" in content
+    assert "### Agent: agent_a" in content
+    assert "**Rating:** Strong" in content
+    assert "**Gate:** Pass — all checks passed" in content
+    assert "**Why:** looks correct" in content
+    assert "## Agent Output" not in content
+
+
+# ── load_snapshot segmented .b64.* parts (gap 14) ─────────────────────────────
+
+
+def test_load_snapshot_reads_segmented_b64_parts(tmp_path: Path) -> None:
+    """When a ``.zip`` file does not exist but alphabetically-ordered
+    ``.b64.*`` segments do, ``load_snapshot`` decodes the
+    concatenated base64 and reads the resulting ZIP archive. This
+    duplicates the contract from test_tui_loading.py in the render
+    test module to ensure the segmented-load path is covered here."""
+    import base64
+    import io
+    import json
+    import zipfile
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as archive:
+        archive.writestr(
+            "run_metadata.json",
+            json.dumps({"status": "completed", "cases_in_plan": 5}),
+        )
+        archive.writestr(
+            "benchmark_plan.json",
+            json.dumps({"cases": [{"id": 1, "title": "B64 case"}]}),
+        )
+    zip_bytes = zip_buffer.getvalue()
+    encoded = base64.b64encode(zip_bytes).decode("ascii")
+    midpoint = len(encoded) // 2
+    segment_0 = encoded[:midpoint]
+    segment_1 = encoded[midpoint:]
+    assert segment_0 and segment_1
+    zip_path = tmp_path / "segments.zip"
+    assert not zip_path.exists()
+    (tmp_path / "segments.zip.b64.0").write_text(segment_0, encoding="ascii")
+    (tmp_path / "segments.zip.b64.1").write_text(segment_1, encoding="ascii")
+    snapshot = load_snapshot(zip_path)
+    assert snapshot.metadata.get("status") == "completed"
+    assert snapshot.metadata.get("cases_in_plan") == 5
+    assert snapshot.plan.get("cases") == [{"id": 1, "title": "B64 case"}]
+
+
+def test_safe_add_negative_col_produces_positive_n() -> None:
+    """When col is negative (should not happen), n = width - col - 1 > width."""
+    from unittest.mock import MagicMock
+
+    stdscr = MagicMock()
+    BenchDeckTUI._safe_add(stdscr, 0, -5, "text", 80)
+    stdscr.addnstr.assert_called_once_with(0, -5, "text", 84, 0)
