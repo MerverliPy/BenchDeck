@@ -36,7 +36,7 @@ BenchDeck turns one or two Markdown agent files into a benchmark plan, runs isol
 <img src="assets/screenshots/help-w32.png" alt="Help 32-col" width="320">
 <img src="assets/screenshots/help.png" alt="Help 80-col" width="740">
 
-*Captured from a live benchmark run (`gpt-4o-mini`, 8 cases, repository-integrity-agent). Regenerate with `scripts/generate_demo_screens.py --run-dir benchmark_out/<run_id>`.*
+*Generated from synthetic demo data (12 cases). Regenerate with `scripts/generate_demo_screens.py --widths 32,80 --format png --font-size 15`.*
 
 ### Benchmark Results
 

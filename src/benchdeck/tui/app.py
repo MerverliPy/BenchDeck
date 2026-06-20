@@ -463,7 +463,7 @@ class BenchDeckTUI:
         else:
             header = f"Cases: {total} total · {judged} judged · {blocked} blocked"
         if len(header) > width:
-            header = header[:width]
+            header = header[: width - 1] + "\u2026"
         lines = [header]
         if not self.enable_case_filter:
             for index, case in enumerate(cases):
