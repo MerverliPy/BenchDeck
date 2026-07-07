@@ -3,4 +3,4 @@ pytest-cov==7.1.0
 ruff==0.15.16
 mypy==2.1.0
 types-jsonschema==4.26.0.20260518
-Pillow==12.2.0
+Pillow==12.3.0
