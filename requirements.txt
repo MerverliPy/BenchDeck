@@ -1,4 +1,4 @@
-openai==2.41.1
+openai==2.45.0
 pydantic==2.13.4
 jsonschema==4.26.0
 portalocker==3.2.0
